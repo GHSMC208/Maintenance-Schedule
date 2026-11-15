@@ -1,0 +1,6 @@
+{
+  "name": "WardCare Schedule",
+  "description": "Hospital ward weekly and monthly maintenance schedule, inventory and expiry tracking, environmental and fire safety round checklist, and weekly oxygen cylinder inspection tool.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
