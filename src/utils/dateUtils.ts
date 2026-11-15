@@ -147,3 +147,88 @@ export function downloadTextFile(filename: string, content: string, mimeType: st
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+function clampDayToMonth(year: number, month: number, day: number): string {
+  const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const safeDay = Math.max(1, Math.min(day, maxDay));
+  return `${year}-${String(month).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`;
+}
+
+function normalizeYear(rawYear: number): number {
+  return rawYear < 100 ? 2000 + rawYear : rawYear;
+}
+
+export function parseCrashCartReferenceDate(checkDateStr: string): string {
+  const m = checkDateStr.match(/(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{2,4})/);
+  if (m) {
+    const d = Number(m[1]);
+    const mo = Number(m[2]);
+    const y = normalizeYear(Number(m[3]));
+    if (mo >= 1 && mo <= 12 && y >= 2000 && y <= 2100) {
+      return clampDayToMonth(y, mo, d);
+    }
+  }
+  return getTodayIso();
+}
+
+export function extractIsoDatesFromSlot(slotValue: string): string[] {
+  const text = slotValue.trim();
+  if (!text) return [];
+  const upper = text.toUpperCase();
+  if (upper === 'NA' || upper === 'NIL' || upper === 'NILL') return [];
+
+  const results: string[] = [];
+
+  // 1. Match full DD-MM-YYYY or DD/MM/YYYY or DD-MM-YY
+  const fullRe = /(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{2,4})/g;
+  const remainder = text.replace(fullRe, (_match, dStr, mStr, yStr) => {
+    const d = Number(dStr);
+    const mo = Number(mStr);
+    const y = normalizeYear(Number(yStr));
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && y >= 2020 && y <= 2045) {
+      results.push(clampDayToMonth(y, mo, d));
+    }
+    return ' ';
+  });
+
+  // 2. Match MM-YYYY or MM/YYYY or MM-YY in remaining text (month-year expiry means end of that month)
+  const myRe = /\b(\d{1,2})\s*[/-]\s*(\d{2,4})\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = myRe.exec(remainder)) !== null) {
+    const mo = Number(m[1]);
+    const y = normalizeYear(Number(m[2]));
+    if (mo >= 1 && mo <= 12 && y >= 2020 && y <= 2045) {
+      const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      results.push(clampDayToMonth(y, mo, lastDay));
+    }
+  }
+
+  return results;
+}
+
+export type CrashCartExpirySeverity = 'expired' | 'near-3m' | 'ok';
+
+export function getCrashCartSlotExpirySeverity(
+  slotValue: string,
+  referenceDateIso: string
+): CrashCartExpirySeverity {
+  const dates = extractIsoDatesFromSlot(slotValue);
+  if (dates.length === 0) return 'ok';
+
+  // End of the 3rd calendar month from the reference date (e.g., Nov 2026 -> Feb 28, 2027)
+  const [ry, rm] = referenceDateIso.split('-').map(Number);
+  const cutoffDate = new Date(Date.UTC(ry, rm - 1 + 3 + 1, 0));
+  const cutoffIso = `${cutoffDate.getUTCFullYear()}-${String(cutoffDate.getUTCMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getUTCDate()).padStart(2, '0')}`;
+
+  let worst: CrashCartExpirySeverity = 'ok';
+  for (const iso of dates) {
+    if (iso < referenceDateIso) {
+      return 'expired';
+    }
+    if (iso <= cutoffIso) {
+      worst = 'near-3m';
+    }
+  }
+  return worst;
+}
+

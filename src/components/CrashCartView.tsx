@@ -1,7 +1,12 @@
 import { CheckCircle2, Eye, FileEdit, Lock, Plus, Printer, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { CrashCartChecklist, CrashCartItemRow } from '../types/ward';
-import { addDaysIso, getTodayIso } from '../utils/dateUtils';
+import {
+  addDaysIso,
+  getCrashCartSlotExpirySeverity,
+  getTodayIso,
+  parseCrashCartReferenceDate,
+} from '../utils/dateUtils';
 import { CrashCartPrintView } from './CrashCartPrintView';
 
 interface CrashCartViewProps {
@@ -44,6 +49,7 @@ export function CrashCartView({
   const [selectedCartId, setSelectedCartId] = useState<string>(carts[0]?.id || '');
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [sectionFilter, setSectionFilter] = useState<string>('all');
+  const [onlyNearExpiry, setOnlyNearExpiry] = useState(false);
   const [search, setSearch] = useState('');
   const [showAddCartModal, setShowAddCartModal] = useState(false);
   const [newDefibLabel, setNewDefibLabel] = useState('');
@@ -52,6 +58,25 @@ export function CrashCartView({
     () => carts.find((c) => c.id === selectedCartId) || carts[0],
     [carts, selectedCartId]
   );
+
+  const refDate = useMemo(
+    () => (activeCart ? parseCrashCartReferenceDate(activeCart.checkDate) : getTodayIso()),
+    [activeCart]
+  );
+
+  const expiryStats = useMemo(() => {
+    if (!activeCart) return { near3m: 0, expired: 0 };
+    let near3m = 0;
+    let expired = 0;
+    for (const item of activeCart.items) {
+      for (const slot of item.slots) {
+        const sev = getCrashCartSlotExpirySeverity(slot, refDate);
+        if (sev === 'expired') expired += 1;
+        else if (sev === 'near-3m') near3m += 1;
+      }
+    }
+    return { near3m, expired };
+  }, [activeCart, refDate]);
 
   if (!activeCart) return null;
 
@@ -270,15 +295,28 @@ export function CrashCartView({
               ))}
             </div>
 
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search cart items or expiry..."
-                className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md w-60 focus:outline-none focus:ring-2 focus:ring-teal-700"
-              />
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setOnlyNearExpiry((v) => !v)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  onlyNearExpiry
+                    ? 'bg-amber-100 border-amber-400 text-amber-950'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Near Expiry &le; 3m ({expiryStats.near3m + expiryStats.expired})
+              </button>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search cart items or expiry..."
+                  className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md w-56 focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
             </div>
           </div>
 
@@ -287,6 +325,12 @@ export function CrashCartView({
             visibleSections.map((sec) => {
               const secItems = activeCart.items.filter((it) => {
                 if (it.sectionId !== sec.id) return false;
+                if (onlyNearExpiry) {
+                  const hasAlert = it.slots.some(
+                    (s) => getCrashCartSlotExpirySeverity(s, refDate) !== 'ok'
+                  );
+                  if (!hasAlert) return false;
+                }
                 if (search.trim()) {
                   const q = search.toLowerCase();
                   const hay = `${it.name} ${it.quantity} ${it.slots.join(' ')}`.toLowerCase();
@@ -338,18 +382,27 @@ export function CrashCartView({
                                         : 'grid-cols-3'
                                 }`}
                               >
-                                {item.slots.map((val, idx) => (
-                                  <input
-                                    key={`${item.id}-${idx}`}
-                                    type="text"
-                                    value={val}
-                                    onChange={(e) =>
-                                      onUpdateSlot(activeCart.id, item.id, idx, e.target.value)
-                                    }
-                                    placeholder={`Slot ${idx + 1}`}
-                                    className="px-2 py-1 text-xs font-mono border border-slate-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-teal-700"
-                                  />
-                                ))}
+                                {item.slots.map((val, idx) => {
+                                  const sev = getCrashCartSlotExpirySeverity(val, refDate);
+                                  const slotClass =
+                                    sev === 'expired'
+                                      ? 'bg-rose-100 border-rose-400 text-rose-900 font-semibold'
+                                      : sev === 'near-3m'
+                                        ? 'bg-amber-100 border-amber-400 text-amber-950 font-semibold'
+                                        : 'bg-white border-slate-200';
+                                  return (
+                                    <input
+                                      key={`${item.id}-${idx}`}
+                                      type="text"
+                                      value={val}
+                                      onChange={(e) =>
+                                        onUpdateSlot(activeCart.id, item.id, idx, e.target.value)
+                                      }
+                                      placeholder={`Slot ${idx + 1}`}
+                                      className={`px-2 py-1 text-xs font-mono border rounded focus:outline-none focus:ring-2 focus:ring-teal-700 ${slotClass}`}
+                                    />
+                                  );
+                                })}
                               </div>
                             </td>
                           </tr>

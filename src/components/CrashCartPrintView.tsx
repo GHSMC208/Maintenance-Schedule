@@ -1,4 +1,8 @@
 import type { CrashCartChecklist, CrashCartItemRow } from '../types/ward';
+import {
+  getCrashCartSlotExpirySeverity,
+  parseCrashCartReferenceDate,
+} from '../utils/dateUtils';
 
 interface CrashCartPrintViewProps {
   cart: CrashCartChecklist;
@@ -16,22 +20,42 @@ function OfficialHeader() {
   );
 }
 
-function renderExpiryGrid(item: CrashCartItemRow) {
+function slotHighlightClass(slotValue: string, refDate: string): string {
+  const sev = getCrashCartSlotExpirySeverity(slotValue, refDate);
+  if (sev === 'expired') {
+    return 'bg-[#fecaca] text-[#7f1d1d] font-bold';
+  }
+  if (sev === 'near-3m') {
+    return 'bg-[#fef08a] text-black font-bold';
+  }
+  return '';
+}
+
+function renderExpiryGrid(item: CrashCartItemRow, refDate: string) {
   if (item.cellLayout === 'single') {
+    const hl = slotHighlightClass(item.slots[0] || '', refDate);
     return (
-      <div className="px-1.5 py-0.5 text-[9.5px] leading-tight text-center min-h-[17px] flex items-center justify-center">
+      <div
+        className={`px-1.5 py-0.5 text-[9.5px] leading-tight text-center min-h-[17px] flex items-center justify-center ${hl}`}
+      >
         {item.slots[0] || ''}
       </div>
     );
   }
 
   if (item.cellLayout === 'pair') {
+    const hl0 = slotHighlightClass(item.slots[0] || '', refDate);
+    const hl1 = slotHighlightClass(item.slots[1] || '', refDate);
     return (
       <div className="grid grid-cols-12 h-full min-h-[17px]">
-        <div className="col-span-9 border-r border-black px-1.5 py-0.5 text-[9.5px] leading-tight text-center flex items-center justify-center">
+        <div
+          className={`col-span-9 border-r border-black px-1.5 py-0.5 text-[9.5px] leading-tight text-center flex items-center justify-center ${hl0}`}
+        >
           {item.slots[0] || ''}
         </div>
-        <div className="col-span-3 px-1 py-0.5 text-[9.5px] leading-tight text-center flex items-center justify-center">
+        <div
+          className={`col-span-3 px-1 py-0.5 text-[9.5px] leading-tight text-center flex items-center justify-center ${hl1}`}
+        >
           {item.slots[1] || ''}
         </div>
       </div>
@@ -41,15 +65,14 @@ function renderExpiryGrid(item: CrashCartItemRow) {
   if (item.cellLayout === 'triple') {
     return (
       <div className="grid grid-cols-3 h-full min-h-[17px]">
-        <div className="border-r border-black px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center">
-          {item.slots[0] || ''}
-        </div>
-        <div className="border-r border-black px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center">
-          {item.slots[1] || ''}
-        </div>
-        <div className="px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center">
-          {item.slots[2] || ''}
-        </div>
+        {[0, 1, 2].map((idx) => (
+          <div
+            key={idx}
+            className={`${idx < 2 ? 'border-r border-black ' : ''}px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
+          >
+            {item.slots[idx] || ''}
+          </div>
+        ))}
       </div>
     );
   }
@@ -57,18 +80,18 @@ function renderExpiryGrid(item: CrashCartItemRow) {
   if (item.cellLayout === 'split-2x2') {
     return (
       <div className="grid grid-cols-2">
-        <div className="border-r border-b border-black px-1 py-0.5 text-[9px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-          {item.slots[0] || ''}
-        </div>
-        <div className="border-b border-black px-1 py-0.5 text-[9px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-          {item.slots[1] || ''}
-        </div>
-        <div className="border-r border-black px-1 py-0.5 text-[9px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-          {item.slots[2] || ''}
-        </div>
-        <div className="px-1 py-0.5 text-[9px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-          {item.slots[3] || ''}
-        </div>
+        {[0, 1, 2, 3].map((idx) => {
+          const borderRight = idx % 2 === 0 ? 'border-r border-black ' : '';
+          const borderBottom = idx < 2 ? 'border-b border-black ' : '';
+          return (
+            <div
+              key={idx}
+              className={`${borderRight}${borderBottom}px-1 py-0.5 text-[9px] leading-tight text-center min-h-[16px] flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
+            >
+              {item.slots[idx] || ''}
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -76,52 +99,52 @@ function renderExpiryGrid(item: CrashCartItemRow) {
   // split-2x3
   return (
     <div className="grid grid-cols-3">
-      <div className="border-r border-b border-black px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-        {item.slots[0] || ''}
-      </div>
-      <div className="border-r border-b border-black px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-        {item.slots[1] || ''}
-      </div>
-      <div className="border-b border-black px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-        {item.slots[2] || ''}
-      </div>
-      <div className="border-r border-black px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-        {item.slots[3] || ''}
-      </div>
-      <div className="border-r border-black px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-        {item.slots[4] || ''}
-      </div>
-      <div className="px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center">
-        {item.slots[5] || ''}
-      </div>
+      {[0, 1, 2, 3, 4, 5].map((idx) => {
+        const borderRight = idx % 3 < 2 ? 'border-r border-black ' : '';
+        const borderBottom = idx < 3 ? 'border-b border-black ' : '';
+        return (
+          <div
+            key={idx}
+            className={`${borderRight}${borderBottom}px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
+          >
+            {item.slots[idx] || ''}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function renderPage23ExpiryGrid(item: CrashCartItemRow) {
+function renderPage23ExpiryGrid(item: CrashCartItemRow, refDate: string) {
   if (item.cellLayout === 'pair') {
     return (
       <div className="grid grid-cols-2 h-full min-h-[17px]">
-        <div className="border-r border-black px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center">
+        <div
+          className={`border-r border-black px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[0] || '', refDate)}`}
+        >
           {item.slots[0] || ''}
         </div>
-        <div className="px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center">
+        <div
+          className={`px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[1] || '', refDate)}`}
+        >
           {item.slots[1] || ''}
         </div>
       </div>
     );
   }
-  return renderExpiryGrid(item);
+  return renderExpiryGrid(item, refDate);
 }
 
 function SectionTablePage1({
   sideLabel,
   itemHeader,
   rows,
+  refDate,
 }: {
   sideLabel: string;
   itemHeader: string;
   rows: CrashCartItemRow[];
+  refDate: string;
 }) {
   return (
     <table className="w-full border-collapse border border-black mb-1.5">
@@ -157,7 +180,9 @@ function SectionTablePage1({
             <td className="border border-black px-1 py-0.5 text-[10px] text-center leading-tight">
               {row.quantity}
             </td>
-            <td className="border border-black p-0 align-middle">{renderExpiryGrid(row)}</td>
+            <td className="border border-black p-0 align-middle">
+              {renderExpiryGrid(row, refDate)}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -169,11 +194,13 @@ function SectionTableMulti({
   sideLabel,
   itemHeader,
   rows,
+  refDate,
   showHeader = true,
 }: {
   sideLabel: string;
   itemHeader: string;
   rows: CrashCartItemRow[];
+  refDate: string;
   showHeader?: boolean;
 }) {
   return (
@@ -234,7 +261,7 @@ function SectionTableMulti({
               {row.quantity}
             </td>
             <td className="border border-black w-[250px] p-0 align-middle">
-              {renderPage23ExpiryGrid(row)}
+              {renderPage23ExpiryGrid(row, refDate)}
             </td>
           </tr>
         ))}
@@ -244,6 +271,7 @@ function SectionTableMulti({
 }
 
 export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
+  const refDate = parseCrashCartReferenceDate(cart.checkDate);
   const bySection = (sec: CrashCartItemRow['sectionId']) =>
     cart.items.filter((it) => it.sectionId === sec);
 
@@ -253,7 +281,19 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
       <div className="appendix2-page bg-white border border-slate-300 shadow-sm p-6 max-w-[820px] mx-auto">
         <OfficialHeader />
 
-        <div className="text-[11px] font-bold underline mb-0.5">Appendix 2</div>
+        <div className="flex items-baseline justify-between mb-0.5">
+          <div className="text-[11px] font-bold underline">Appendix 2</div>
+          <div className="appendix2-sans text-[8.5px] flex items-center gap-3">
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-2.5 h-2.5 bg-[#fef08a] border border-black" />
+              <span>Near Expiry (&le; 3 months)</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-2.5 h-2.5 bg-[#fecaca] border border-black" />
+              <span>Expired</span>
+            </span>
+          </div>
+        </div>
         <div className="text-center text-[12px] mb-2">
           Checklist Template – For Crash Cart &amp; Defibrillator - Adult/Pediatric
         </div>
@@ -312,26 +352,31 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
           sideLabel={'Top Shelf\n(Defibrillator)'}
           itemHeader="Defibrillator items"
           rows={bySection('top-shelf')}
+          refDate={refDate}
         />
         <SectionTablePage1
           sideLabel={'1st Drawer:\n(Core medications)'}
           itemHeader="Drugs Name"
           rows={bySection('drawer-1')}
+          refDate={refDate}
         />
         <SectionTablePage1
           sideLabel={'2nd Drawer:\n(Additional Medications)'}
           itemHeader="Drugs Name"
           rows={bySection('drawer-2')}
+          refDate={refDate}
         />
         <SectionTablePage1
           sideLabel={'In CAD\nCupboard'}
           itemHeader="Drugs Name"
           rows={bySection('cad-cupboard')}
+          refDate={refDate}
         />
         <SectionTablePage1
           sideLabel={'In\nFridge'}
           itemHeader="Drugs Name (Keep in fridge according to manufacture advice)"
           rows={bySection('fridge')}
+          refDate={refDate}
         />
       </div>
 
@@ -343,12 +388,14 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
           sideLabel={'3rd drawer:\n(Breathing/Airway)'}
           itemHeader="Breathing/Airway Items"
           rows={bySection('drawer-3')}
+          refDate={refDate}
         />
 
         <SectionTableMulti
           sideLabel={'4th drawer:\nCirculation & IV.'}
           itemHeader="Circulation and IV Items"
           rows={bySection('drawer-4-p1')}
+          refDate={refDate}
         />
       </div>
 
@@ -360,6 +407,7 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
           sideLabel=""
           itemHeader="Circulation and IV Items"
           rows={bySection('drawer-4-p2')}
+          refDate={refDate}
           showHeader={false}
         />
 
@@ -367,18 +415,21 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
           sideLabel={'In\nTreatment\nRoom'}
           itemHeader="Additional Accessory Items"
           rows={bySection('treatment-room')}
+          refDate={refDate}
         />
 
         <SectionTableMulti
           sideLabel={'Emergency C\nSection'}
           itemHeader="Items"
           rows={bySection('emergency-c')}
+          refDate={refDate}
         />
 
         <SectionTableMulti
           sideLabel={'Side of\nThe Cart'}
           itemHeader="Extras"
           rows={bySection('side-cart')}
+          refDate={refDate}
         />
 
         {/* Comments & Sign-Off Boxes */}
