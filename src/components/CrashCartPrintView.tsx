@@ -10,7 +10,7 @@ interface CrashCartPrintViewProps {
 
 function OfficialHeader() {
   return (
-    <div className="mb-1.5 flex items-center justify-center">
+    <div className="mb-1 flex items-center justify-center shrink-0">
       <img
         src="/assets/gov_hospitals_header.png"
         alt="Government Hospitals"
@@ -31,12 +31,15 @@ function slotHighlightClass(slotValue: string, refDate: string): string {
   return '';
 }
 
-function renderExpiryGrid(item: CrashCartItemRow, refDate: string) {
+function renderExpiryGrid(item: CrashCartItemRow, refDate: string, compact = false) {
+  const minH = compact ? 'min-h-[15px]' : 'min-h-[19px]';
+  const textSz = compact ? 'text-[8.5px]' : 'text-[9.5px]';
+
   if (item.cellLayout === 'single') {
     const hl = slotHighlightClass(item.slots[0] || '', refDate);
     return (
       <div
-        className={`px-1.5 py-0.5 text-[9.5px] leading-tight text-center min-h-[17px] flex items-center justify-center ${hl}`}
+        className={`px-1.5 py-0.5 ${textSz} leading-tight text-center ${minH} h-full flex items-center justify-center ${hl}`}
       >
         {item.slots[0] || ''}
       </div>
@@ -47,14 +50,14 @@ function renderExpiryGrid(item: CrashCartItemRow, refDate: string) {
     const hl0 = slotHighlightClass(item.slots[0] || '', refDate);
     const hl1 = slotHighlightClass(item.slots[1] || '', refDate);
     return (
-      <div className="grid grid-cols-12 h-full min-h-[17px]">
+      <div className={`grid grid-cols-12 h-full ${minH}`}>
         <div
-          className={`col-span-9 border-r border-black px-1.5 py-0.5 text-[9.5px] leading-tight text-center flex items-center justify-center ${hl0}`}
+          className={`col-span-9 border-r border-black px-1.5 py-0.5 ${textSz} leading-tight text-center flex items-center justify-center ${hl0}`}
         >
           {item.slots[0] || ''}
         </div>
         <div
-          className={`col-span-3 px-1 py-0.5 text-[9.5px] leading-tight text-center flex items-center justify-center ${hl1}`}
+          className={`col-span-3 px-1 py-0.5 ${textSz} leading-tight text-center flex items-center justify-center ${hl1}`}
         >
           {item.slots[1] || ''}
         </div>
@@ -64,11 +67,11 @@ function renderExpiryGrid(item: CrashCartItemRow, refDate: string) {
 
   if (item.cellLayout === 'triple') {
     return (
-      <div className="grid grid-cols-3 h-full min-h-[17px]">
+      <div className={`grid grid-cols-3 h-full ${minH}`}>
         {[0, 1, 2].map((idx) => (
           <div
             key={idx}
-            className={`${idx < 2 ? 'border-r border-black ' : ''}px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
+            className={`${idx < 2 ? 'border-r border-black ' : ''}px-1 py-0.5 text-[8.5px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
           >
             {item.slots[idx] || ''}
           </div>
@@ -79,14 +82,14 @@ function renderExpiryGrid(item: CrashCartItemRow, refDate: string) {
 
   if (item.cellLayout === 'split-2x2') {
     return (
-      <div className="grid grid-cols-2">
+      <div className="grid grid-cols-2 h-full">
         {[0, 1, 2, 3].map((idx) => {
           const borderRight = idx % 2 === 0 ? 'border-r border-black ' : '';
           const borderBottom = idx < 2 ? 'border-b border-black ' : '';
           return (
             <div
               key={idx}
-              className={`${borderRight}${borderBottom}px-1 py-0.5 text-[9px] leading-tight text-center min-h-[16px] flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
+              className={`${borderRight}${borderBottom}px-1 py-[1px] text-[8.5px] leading-tight text-center min-h-[14px] flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
             >
               {item.slots[idx] || ''}
             </div>
@@ -98,14 +101,14 @@ function renderExpiryGrid(item: CrashCartItemRow, refDate: string) {
 
   // split-2x3
   return (
-    <div className="grid grid-cols-3">
+    <div className="grid grid-cols-3 h-full">
       {[0, 1, 2, 3, 4, 5].map((idx) => {
         const borderRight = idx % 3 < 2 ? 'border-r border-black ' : '';
         const borderBottom = idx < 3 ? 'border-b border-black ' : '';
         return (
           <div
             key={idx}
-            className={`${borderRight}${borderBottom}px-1 py-0.5 text-[8.5px] leading-tight text-center min-h-[16px] flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
+            className={`${borderRight}${borderBottom}px-1 py-[1px] text-[8px] leading-tight text-center min-h-[14px] flex items-center justify-center ${slotHighlightClass(item.slots[idx] || '', refDate)}`}
           >
             {item.slots[idx] || ''}
           </div>
@@ -115,24 +118,24 @@ function renderExpiryGrid(item: CrashCartItemRow, refDate: string) {
   );
 }
 
-function renderPage23ExpiryGrid(item: CrashCartItemRow, refDate: string) {
+function renderPage23ExpiryGrid(item: CrashCartItemRow, refDate: string, compact = false) {
   if (item.cellLayout === 'pair') {
     return (
-      <div className="grid grid-cols-2 h-full min-h-[17px]">
+      <div className={`grid grid-cols-2 h-full ${compact ? 'min-h-[15px]' : 'min-h-[17px]'}`}>
         <div
-          className={`border-r border-black px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[0] || '', refDate)}`}
+          className={`border-r border-black px-1 py-[1px] text-[8.5px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[0] || '', refDate)}`}
         >
           {item.slots[0] || ''}
         </div>
         <div
-          className={`px-1 py-0.5 text-[9px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[1] || '', refDate)}`}
+          className={`px-1 py-[1px] text-[8.5px] leading-tight text-center flex items-center justify-center ${slotHighlightClass(item.slots[1] || '', refDate)}`}
         >
           {item.slots[1] || ''}
         </div>
       </div>
     );
   }
-  return renderExpiryGrid(item, refDate);
+  return renderExpiryGrid(item, refDate, compact);
 }
 
 function SectionTablePage1({
@@ -140,14 +143,16 @@ function SectionTablePage1({
   itemHeader,
   rows,
   refDate,
+  flexGrowClass = 'flex-1',
 }: {
   sideLabel: string;
   itemHeader: string;
   rows: CrashCartItemRow[];
   refDate: string;
+  flexGrowClass?: string;
 }) {
   return (
-    <table className="w-full border-collapse border border-black mb-1.5">
+    <table className={`w-full border-collapse border border-black ${flexGrowClass}`}>
       <tbody>
         <tr>
           <td
@@ -158,30 +163,30 @@ function SectionTablePage1({
               {sideLabel}
             </div>
           </td>
-          <th className="border border-black w-[24px] px-1 py-0.5 text-[9.5px] font-bold text-left">
+          <th className="border border-black w-[24px] px-1 py-1 text-[9.5px] font-bold text-left">
             No
           </th>
-          <th className="border border-black px-1.5 py-0.5 text-[10.5px] font-bold text-left">
+          <th className="border border-black px-1.5 py-1 text-[10.5px] font-bold text-left">
             {itemHeader}
           </th>
-          <th className="border border-black w-[72px] px-1 py-0.5 text-[9.5px] font-bold text-center">
+          <th className="border border-black w-[74px] px-1 py-1 text-[9.5px] font-bold text-center">
             Quantity
           </th>
-          <th className="border border-black w-[230px] px-1 py-0.5 text-[9.5px] font-bold text-center">
+          <th className="border border-black w-[225px] px-1 py-1 text-[9.5px] font-bold text-center">
             Expiry Date
           </th>
         </tr>
         {rows.map((row) => (
           <tr key={row.id}>
             <td className="border border-black px-1 py-0.5 text-[8.5px] align-top">{row.no}</td>
-            <td className="border border-black px-1.5 py-0.5 text-[10.5px] leading-snug">
+            <td className="border border-black px-1.5 py-0.5 text-[10.5px] leading-snug align-middle">
               {row.name}
             </td>
-            <td className="border border-black px-1 py-0.5 text-[10px] text-center leading-tight">
+            <td className="border border-black px-1 py-0.5 text-[10px] text-center leading-tight align-middle">
               {row.quantity}
             </td>
             <td className="border border-black p-0 align-middle">
-              {renderExpiryGrid(row, refDate)}
+              {renderExpiryGrid(row, refDate, false)}
             </td>
           </tr>
         ))}
@@ -196,36 +201,43 @@ function SectionTableMulti({
   rows,
   refDate,
   showHeader = true,
+  compact = false,
+  flexGrowClass = '',
 }: {
   sideLabel: string;
   itemHeader: string;
   rows: CrashCartItemRow[];
   refDate: string;
   showHeader?: boolean;
+  compact?: boolean;
+  flexGrowClass?: string;
 }) {
+  const cellPy = compact ? 'py-[1px]' : 'py-[2px]';
+  const itemText = compact ? 'text-[9.2px] leading-[1.15]' : 'text-[9.8px] leading-tight';
+
   return (
-    <table className="w-full border-collapse border border-black mb-1.5">
+    <table className={`w-full border-collapse border border-black ${flexGrowClass}`}>
       <tbody>
         {showHeader && (
           <tr>
             <td
               rowSpan={rows.length + 1}
-              className="border border-black w-[36px] p-1 text-center align-middle"
+              className="border border-black w-[34px] p-0.5 text-center align-middle"
             >
-              <div className="appendix2-vertical text-[9.5px] font-bold leading-tight mx-auto whitespace-pre-line">
+              <div className="appendix2-vertical text-[9px] font-bold leading-tight mx-auto whitespace-pre-line">
                 {sideLabel}
               </div>
             </td>
-            <th className="border border-black w-[24px] px-1 py-0.5 text-[9.5px] font-bold text-left">
+            <th className="border border-black w-[22px] px-1 py-[2px] text-[9px] font-bold text-left">
               No
             </th>
-            <th className="border border-black px-1.5 py-0.5 text-[10.5px] font-bold text-left">
+            <th className="border border-black px-1.5 py-[2px] text-[10px] font-bold text-left">
               {itemHeader}
             </th>
-            <th className="border border-black w-[66px] px-1 py-0.5 text-[9.5px] font-bold text-center">
+            <th className="border border-black w-[64px] px-1 py-[2px] text-[9px] font-bold text-center">
               Quantity
             </th>
-            <th className="border border-black w-[250px] px-1 py-0.5 text-[9.5px] font-bold text-center">
+            <th className="border border-black w-[245px] px-1 py-[2px] text-[9px] font-bold text-center">
               Expiry Date
             </th>
           </tr>
@@ -235,33 +247,35 @@ function SectionTableMulti({
             {!showHeader && idx === 0 && (
               <td
                 rowSpan={rows.length}
-                className="border border-black w-[36px] p-1 text-center align-middle"
+                className="border border-black w-[34px] p-0.5 text-center align-middle"
               >
-                <div className="appendix2-vertical text-[9.5px] font-bold leading-tight mx-auto whitespace-pre-line">
+                <div className="appendix2-vertical text-[9px] font-bold leading-tight mx-auto whitespace-pre-line">
                   {sideLabel}
                 </div>
               </td>
             )}
-            <td className="border border-black w-[24px] px-1 py-0.5 text-[8.5px] align-top">
+            <td className={`border border-black w-[22px] px-1 ${cellPy} text-[8px] align-top`}>
               {row.no}
             </td>
-            <td className="border border-black p-0 align-top">
+            <td className="border border-black p-0 align-middle">
               {row.hasExpirySubRow ? (
                 <div>
-                  <div className="px-1.5 py-0.5 text-[10px] leading-tight border-b border-black">
+                  <div className={`px-1.5 ${cellPy} ${itemText} border-b border-black`}>
                     {row.name}
                   </div>
-                  <div className="px-1.5 py-0.5 text-[8.5px] font-bold leading-tight">Expiry</div>
+                  <div className="px-1.5 py-[1px] text-[8px] font-bold leading-tight">Expiry</div>
                 </div>
               ) : (
-                <div className="px-1.5 py-0.5 text-[10px] leading-tight">{row.name}</div>
+                <div className={`px-1.5 ${cellPy} ${itemText}`}>{row.name}</div>
               )}
             </td>
-            <td className="border border-black w-[66px] px-1 py-0.5 text-[9.5px] text-center leading-tight">
+            <td
+              className={`border border-black w-[64px] px-1 ${cellPy} text-[9px] text-center leading-tight align-middle`}
+            >
               {row.quantity}
             </td>
-            <td className="border border-black w-[250px] p-0 align-middle">
-              {renderPage23ExpiryGrid(row, refDate)}
+            <td className="border border-black w-[245px] p-0 align-middle">
+              {renderPage23ExpiryGrid(row, refDate, compact)}
             </td>
           </tr>
         ))}
@@ -278,10 +292,10 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
   return (
     <div className="appendix2-sheet space-y-6 print:space-y-0">
       {/* ==================== PAGE 1 ==================== */}
-      <div className="appendix2-page bg-white border border-slate-300 shadow-sm p-6 max-w-[820px] mx-auto">
+      <div className="appendix2-page bg-white border border-slate-300 shadow-sm mx-auto">
         <OfficialHeader />
 
-        <div className="flex items-baseline justify-between mb-0.5">
+        <div className="flex items-baseline justify-between mb-0.5 shrink-0">
           <div className="text-[11px] font-bold underline">Appendix 2</div>
           <div className="appendix2-sans text-[8.5px] flex items-center gap-3">
             <span className="inline-flex items-center gap-1">
@@ -294,12 +308,12 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
             </span>
           </div>
         </div>
-        <div className="text-center text-[12px] mb-2">
+        <div className="text-center text-[12px] mb-1.5 shrink-0">
           Checklist Template – For Crash Cart &amp; Defibrillator - Adult/Pediatric
         </div>
 
         {/* Date / Next Due / Defib / Lock Number row */}
-        <div className="flex items-center justify-between text-[11px] mb-2 gap-2">
+        <div className="flex items-center justify-between text-[11px] mb-1.5 gap-2 shrink-0">
           <div className="flex items-center gap-4">
             <span>
               Date:{' '}
@@ -323,7 +337,7 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
         </div>
 
         {/* Check Type Row */}
-        <table className="w-full border-collapse border border-black mb-1.5">
+        <table className="w-full border-collapse border border-black mb-1.5 shrink-0">
           <tbody>
             <tr>
               <td className="border border-black w-[26px] text-center text-[10.5px] appendix2-sans py-0.5">
@@ -348,156 +362,180 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
           </tbody>
         </table>
 
-        <SectionTablePage1
-          sideLabel={'Top Shelf\n(Defibrillator)'}
-          itemHeader="Defibrillator items"
-          rows={bySection('top-shelf')}
-          refDate={refDate}
-        />
-        <SectionTablePage1
-          sideLabel={'1st Drawer:\n(Core medications)'}
-          itemHeader="Drugs Name"
-          rows={bySection('drawer-1')}
-          refDate={refDate}
-        />
-        <SectionTablePage1
-          sideLabel={'2nd Drawer:\n(Additional Medications)'}
-          itemHeader="Drugs Name"
-          rows={bySection('drawer-2')}
-          refDate={refDate}
-        />
-        <SectionTablePage1
-          sideLabel={'In CAD\nCupboard'}
-          itemHeader="Drugs Name"
-          rows={bySection('cad-cupboard')}
-          refDate={refDate}
-        />
-        <SectionTablePage1
-          sideLabel={'In\nFridge'}
-          itemHeader="Drugs Name (Keep in fridge according to manufacture advice)"
-          rows={bySection('fridge')}
-          refDate={refDate}
-        />
+        {/* 5 Full-Height Distributed Tables */}
+        <div className="flex-1 flex flex-col justify-between gap-1.5">
+          <SectionTablePage1
+            sideLabel={'Top Shelf\n(Defibrillator)'}
+            itemHeader="Defibrillator items"
+            rows={bySection('top-shelf')}
+            refDate={refDate}
+            flexGrowClass="flex-[7]"
+          />
+          <SectionTablePage1
+            sideLabel={'1st Drawer:\n(Core medications)'}
+            itemHeader="Drugs Name"
+            rows={bySection('drawer-1')}
+            refDate={refDate}
+            flexGrowClass="flex-[8]"
+          />
+          <SectionTablePage1
+            sideLabel={'2nd Drawer:\n(Additional Medications)'}
+            itemHeader="Drugs Name"
+            rows={bySection('drawer-2')}
+            refDate={refDate}
+            flexGrowClass="flex-[6]"
+          />
+          <SectionTablePage1
+            sideLabel={'In CAD\nCupboard'}
+            itemHeader="Drugs Name"
+            rows={bySection('cad-cupboard')}
+            refDate={refDate}
+            flexGrowClass="flex-[4]"
+          />
+          <SectionTablePage1
+            sideLabel={'In\nFridge'}
+            itemHeader="Drugs Name (Keep in fridge according to manufacture advice)"
+            rows={bySection('fridge')}
+            refDate={refDate}
+            flexGrowClass="flex-[2]"
+          />
+        </div>
       </div>
 
       {/* ==================== PAGE 2 ==================== */}
-      <div className="appendix2-page bg-white border border-slate-300 shadow-sm p-6 max-w-[820px] mx-auto">
+      <div className="appendix2-page bg-white border border-slate-300 shadow-sm mx-auto">
         <OfficialHeader />
 
-        <SectionTableMulti
-          sideLabel={'3rd drawer:\n(Breathing/Airway)'}
-          itemHeader="Breathing/Airway Items"
-          rows={bySection('drawer-3')}
-          refDate={refDate}
-        />
+        <div className="flex-1 flex flex-col justify-between gap-1.5">
+          <SectionTableMulti
+            sideLabel={'3rd drawer:\n(Breathing/Airway)'}
+            itemHeader="Breathing/Airway Items"
+            rows={bySection('drawer-3')}
+            refDate={refDate}
+            compact={true}
+            flexGrowClass="flex-1"
+          />
 
-        <SectionTableMulti
-          sideLabel={'4th drawer:\nCirculation & IV.'}
-          itemHeader="Circulation and IV Items"
-          rows={bySection('drawer-4-p1')}
-          refDate={refDate}
-        />
+          <SectionTableMulti
+            sideLabel={'4th drawer:\nCirculation & IV.'}
+            itemHeader="Circulation and IV Items"
+            rows={bySection('drawer-4-p1')}
+            refDate={refDate}
+            compact={true}
+            flexGrowClass="flex-1"
+          />
+        </div>
       </div>
 
       {/* ==================== PAGE 3 ==================== */}
-      <div className="appendix2-page bg-white border border-slate-300 shadow-sm p-6 max-w-[820px] mx-auto">
+      <div className="appendix2-page bg-white border border-slate-300 shadow-sm mx-auto">
         <OfficialHeader />
 
-        <SectionTableMulti
-          sideLabel=""
-          itemHeader="Circulation and IV Items"
-          rows={bySection('drawer-4-p2')}
-          refDate={refDate}
-          showHeader={false}
-        />
+        <div className="flex-1 flex flex-col justify-between gap-1">
+          <SectionTableMulti
+            sideLabel=""
+            itemHeader="Circulation and IV Items"
+            rows={bySection('drawer-4-p2')}
+            refDate={refDate}
+            showHeader={false}
+            compact={true}
+            flexGrowClass="flex-1"
+          />
 
-        <SectionTableMulti
-          sideLabel={'In\nTreatment\nRoom'}
-          itemHeader="Additional Accessory Items"
-          rows={bySection('treatment-room')}
-          refDate={refDate}
-        />
+          <SectionTableMulti
+            sideLabel={'In\nTreatment\nRoom'}
+            itemHeader="Additional Accessory Items"
+            rows={bySection('treatment-room')}
+            refDate={refDate}
+            compact={true}
+            flexGrowClass="flex-1"
+          />
 
-        <SectionTableMulti
-          sideLabel={'Emergency C\nSection'}
-          itemHeader="Items"
-          rows={bySection('emergency-c')}
-          refDate={refDate}
-        />
+          <SectionTableMulti
+            sideLabel={'Emergency C\nSection'}
+            itemHeader="Items"
+            rows={bySection('emergency-c')}
+            refDate={refDate}
+            compact={true}
+            flexGrowClass="flex-1"
+          />
 
-        <SectionTableMulti
-          sideLabel={'Side of\nThe Cart'}
-          itemHeader="Extras"
-          rows={bySection('side-cart')}
-          refDate={refDate}
-        />
+          <SectionTableMulti
+            sideLabel={'Side of\nThe Cart'}
+            itemHeader="Extras"
+            rows={bySection('side-cart')}
+            refDate={refDate}
+            compact={true}
+            flexGrowClass="flex-1"
+          />
 
-        {/* Comments & Sign-Off Boxes */}
-        <table className="w-full border-collapse border border-black mt-2 text-[10.5px]">
-          <tbody>
-            <tr>
-              <td className="border border-black p-1.5 align-top w-[68%] h-[68px]">
-                <div className="font-normal">Comments:</div>
-                <div className="appendix2-sans text-[8.5px] leading-snug mt-0.5">
-                  {cart.staffNurseComment}
-                </div>
-              </td>
-              <td className="border border-black p-1.5 text-center align-middle w-[16%] text-[9px] leading-tight">
-                Staff Nurse Name &amp; Signature
-              </td>
-              <td className="border border-black p-1.5 align-top w-[16%] appendix2-sans text-[9.5px]">
-                {cart.staffNurseName}
-              </td>
-            </tr>
+          {/* Comments & Sign-Off Boxes */}
+          <table className="w-full border-collapse border border-black text-[10px] shrink-0">
+            <tbody>
+              <tr>
+                <td className="border border-black p-1.5 align-top w-[68%] h-[64px]">
+                  <div className="font-normal">Comments:</div>
+                  <div className="appendix2-sans text-[8px] leading-snug mt-0.5">
+                    {cart.staffNurseComment}
+                  </div>
+                </td>
+                <td className="border border-black p-1.5 text-center align-middle w-[16%] text-[8.5px] leading-tight">
+                  Staff Nurse Name &amp; Signature
+                </td>
+                <td className="border border-black p-1.5 align-top w-[16%] appendix2-sans text-[9px]">
+                  {cart.staffNurseName}
+                </td>
+              </tr>
 
-            <tr>
-              <td className="border border-black p-1.5 align-top h-[52px]">
-                <div>Comments:</div>
-                <div className="appendix2-sans text-[8.5px] leading-snug mt-0.5">
-                  {cart.supervisorComment}
-                </div>
-              </td>
-              <td className="border border-black p-1.5 text-center align-middle text-[9px] leading-tight">
-                Nurse Supervisor Name and Signature
-              </td>
-              <td className="border border-black p-1.5 align-top appendix2-sans text-[9.5px]">
-                {cart.supervisorName}
-              </td>
-            </tr>
+              <tr>
+                <td className="border border-black p-1.5 align-top h-[48px]">
+                  <div>Comments:</div>
+                  <div className="appendix2-sans text-[8px] leading-snug mt-0.5">
+                    {cart.supervisorComment}
+                  </div>
+                </td>
+                <td className="border border-black p-1.5 text-center align-middle text-[8.5px] leading-tight">
+                  Nurse Supervisor Name and Signature
+                </td>
+                <td className="border border-black p-1.5 align-top appendix2-sans text-[9px]">
+                  {cart.supervisorName}
+                </td>
+              </tr>
 
-            <tr>
-              <td className="border border-black p-1.5 align-top h-[52px]">
-                <div>Comments:</div>
-                <div className="appendix2-sans text-[8.5px] leading-snug mt-0.5">
-                  {cart.headNurseComment}
-                </div>
-              </td>
-              <td className="border border-black p-1.5 text-center align-middle text-[9px] leading-tight">
-                Head Nurse Name and Signature
-              </td>
-              <td className="border border-black p-1.5 align-top appendix2-sans text-[9.5px]">
-                {cart.headNurseName}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              <tr>
+                <td className="border border-black p-1.5 align-top h-[48px]">
+                  <div>Comments:</div>
+                  <div className="appendix2-sans text-[8px] leading-snug mt-0.5">
+                    {cart.headNurseComment}
+                  </div>
+                </td>
+                <td className="border border-black p-1.5 text-center align-middle text-[8.5px] leading-tight">
+                  Head Nurse Name and Signature
+                </td>
+                <td className="border border-black p-1.5 align-top appendix2-sans text-[9px]">
+                  {cart.headNurseName}
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-        {cart.staffCommentsContinued && (
-          <div className="mt-1.5 appendix2-sans text-[8.5px] leading-snug">
-            Staff comments continued: {cart.staffCommentsContinued}
-          </div>
-        )}
+          {cart.staffCommentsContinued && (
+            <div className="appendix2-sans text-[8px] leading-snug shrink-0">
+              Staff comments continued: {cart.staffCommentsContinued}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ==================== PAGE 4 ==================== */}
-      <div className="appendix2-page bg-white border border-slate-300 shadow-sm p-6 max-w-[820px] mx-auto min-h-[600px]">
+      <div className="appendix2-page bg-white border border-slate-300 shadow-sm mx-auto">
         <OfficialHeader />
 
         <table className="w-full border-collapse border border-black mt-3 text-[11px]">
           <tbody>
             <tr>
-              <td className="border border-black p-2.5">
-                <div className="mb-3">
+              <td className="border border-black p-3">
+                <div className="mb-4">
                   Pharmacist name (Monthly Check):{' '}
                   <span className="appendix2-sans text-[10.5px] ml-2">{cart.pharmacistName}</span>
                 </div>
@@ -519,8 +557,8 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
             </tr>
 
             <tr>
-              <td className="border border-black p-2.5">
-                <div className="mb-3">
+              <td className="border border-black p-3">
+                <div className="mb-4">
                   Medical Equipment Staff Name (Twice a year and whenever required):{' '}
                   <span className="appendix2-sans text-[10.5px] ml-2">{cart.biomedName}</span>
                 </div>
@@ -542,8 +580,8 @@ export function CrashCartPrintView({ cart }: CrashCartPrintViewProps) {
             </tr>
 
             <tr>
-              <td className="border border-black p-2.5">
-                <div className="mb-3">
+              <td className="border border-black p-3">
+                <div className="mb-4">
                   Quality Management Nursing Staff Name (Twice a year and whenever required):{' '}
                   <span className="appendix2-sans text-[10.5px] ml-2">{cart.qualityNurseName}</span>
                 </div>

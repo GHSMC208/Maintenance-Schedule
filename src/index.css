@@ -38,10 +38,31 @@
   transform: rotate(180deg);
 }
 
+.appendix2-page {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 8mm 10mm;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
 @media print {
   @page {
     size: A4 portrait;
-    margin: 7mm 8mm;
+    margin: 6mm 8mm;
+  }
+
+  html,
+  body {
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   aside,
@@ -50,31 +71,38 @@
     display: none !important;
   }
 
+  .app-shell-root,
+  .app-shell-main-wrap,
   main {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-
-  body {
-    background: #ffffff !important;
-    color: #000000 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    overflow: visible !important;
   }
 
   .print-only-block {
     display: block !important;
   }
 
+  .appendix2-sheet {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   .appendix2-page {
     width: 100% !important;
     max-width: none !important;
+    min-height: 282mm !important;
     box-shadow: none !important;
     border: none !important;
     margin: 0 !important;
     padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
     page-break-after: always;
     break-after: page;
   }

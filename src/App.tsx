@@ -147,9 +147,9 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-screen flex bg-slate-50 text-slate-900">
+      <div className="app-shell-root min-h-screen flex bg-slate-50 text-slate-900">
         {/* Desktop Sidebar */}
-        <div className="hidden lg:block shrink-0">
+        <div className="no-print hidden lg:block shrink-0">
           <Sidebar
             activeNav={activeNav}
             onSelectNav={handleSelectNav}
@@ -167,7 +167,7 @@ export default function App() {
 
         {/* Mobile / Narrow Window Drawer */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden flex">
+          <div className="no-print fixed inset-0 z-50 lg:hidden flex">
             <div
               className="fixed inset-0 bg-slate-900/40"
               onClick={() => setMobileMenuOpen(false)}
@@ -202,7 +202,7 @@ export default function App() {
         )}
 
         {/* Main Workspace */}
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="app-shell-main-wrap flex-1 min-w-0 flex flex-col">
           {/* Top Header Bar */}
           <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-8 sticky top-0 z-30">
             <div className="flex items-center gap-3 min-w-0">
