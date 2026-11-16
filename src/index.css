@@ -122,6 +122,13 @@
     padding: 0 !important;
     display: flex !important;
     flex-direction: column !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .pharmacy-page-landscape:last-child {
+    page-break-after: auto;
+    break-after: auto;
   }
 
   .pharmacy-page-portrait {
@@ -134,5 +141,12 @@
     padding: 0 !important;
     display: flex !important;
     flex-direction: column !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .pharmacy-page-portrait:last-child {
+    page-break-after: auto;
+    break-after: auto;
   }
 }

@@ -1,18 +1,24 @@
-import { Eye, FileEdit, Printer, RotateCcw, Sparkles } from 'lucide-react';
+import { Eye, FileEdit, Plus, Printer, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
 import type {
   CadChecklistForm,
+  CadDrugRow,
   InventoryItem,
   MonthlyStoreChecklistForm,
+  MonthlyStoreRow,
   PharmacyFormsState,
   WeeklyStockChecklistForm,
   WeeklyStockFormId,
+  WeeklyStockRow,
 } from '../types/ward';
 import { getCrashCartSlotExpirySeverity, getExpiryStatus, getTodayIso } from '../utils/dateUtils';
 import {
+  CAD_ROWS_PER_PAGE,
   CadPrintPage,
+  MONTHLY_STORE_ROWS_PER_PAGE,
   MonthlyStorePrintPage,
+  WEEKLY_ROWS_PER_PAGE,
   WeeklyStockPrintPage,
 } from './PharmacyFormsPrintView';
 
@@ -56,6 +62,56 @@ export function PharmacyFormsView({
   const activeTabMeta = FORM_TABS.find((t) => t.id === activeForm)!;
   const isLandscape = activeTabMeta.orientation === 'Landscape';
 
+  const makeBlankCadRow = (offset = 0): CadDrugRow => ({
+    id: `cad-r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${offset}`,
+    drugName: '',
+    expiryDate: '',
+    shifts: Array.from({ length: 21 }, () => ''),
+  });
+
+  const makeBlankWeeklyRow = (
+    formId: WeeklyStockFormId,
+    slNo: string,
+    offset = 0
+  ): WeeklyStockRow => ({
+    id: `${formId}-r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${offset}`,
+    slNo,
+    medicationName: '',
+    wardQuantity: '',
+    checks: Array.from({ length: 5 }, () => ({ qty: '', expDate: '' })),
+  });
+
+  const makeBlankMonthlyStoreRow = (offset = 0): MonthlyStoreRow => ({
+    id: `ms-r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${offset}`,
+    stockNo: '',
+    description: '',
+    qtyAvailable: '',
+    expiryDate1: '',
+    expiryDate2: '',
+  });
+
+  const handleAddRowsToActiveForm = (count: number) => {
+    if (activeForm === 'cad') {
+      const additions = Array.from({ length: count }, (_, idx) => makeBlankCadRow(idx));
+      onUpdateCad({ rows: [...forms.cad.rows, ...additions] });
+      return;
+    }
+
+    if (activeForm === 'monthly-store') {
+      const additions = Array.from({ length: count }, (_, idx) => makeBlankMonthlyStoreRow(idx));
+      onUpdateMonthlyStore({ rows: [...forms.monthlyStore.rows, ...additions] });
+      return;
+    }
+
+    const wf = forms.weeklyForms[activeForm];
+    const hasNumericSl = wf.rows.some((r) => /^\d+$/.test(r.slNo.trim()));
+    const baseLen = wf.rows.length;
+    const additions = Array.from({ length: count }, (_, idx) =>
+      makeBlankWeeklyRow(activeForm, hasNumericSl ? String(baseLen + idx + 1) : '', idx)
+    );
+    onUpdateWeeklyForm(activeForm, { rows: [...wf.rows, ...additions] });
+  };
+
   const handleAutoPopulateFromInventory = () => {
     const monthStr = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     const slashToday = (() => {
@@ -64,15 +120,17 @@ export function PharmacyFormsView({
     })();
 
     if (activeForm === 'monthly-store') {
-      const storeItems = inventory.filter((i) => i.categoryId === 'store').slice(0, 17);
-      const nextRows = forms.monthlyStore.rows.map((r, idx) => {
+      const storeItems = inventory.filter((i) => i.categoryId === 'store');
+      const targetLen = Math.max(forms.monthlyStore.rows.length, storeItems.length);
+      const nextRows: MonthlyStoreRow[] = Array.from({ length: targetLen }, (_, idx) => {
+        const base = forms.monthlyStore.rows[idx] ?? makeBlankMonthlyStoreRow(idx);
         const src = storeItems[idx];
-        if (!src) return r;
+        if (!src) return base;
         const expStr = src.expiryDate
           ? src.expiryDate.split('-').reverse().join('/')
           : '';
         return {
-          ...r,
+          ...base,
           stockNo: src.batchOrSerial || `${idx + 1}`,
           description: src.name,
           qtyAvailable: `${src.quantity} ${src.unitOfMeasure}`,
@@ -125,15 +183,16 @@ export function PharmacyFormsView({
       sourceItems = inventory.filter((it) => it.categoryId === 'iv-meds');
     }
 
-    const picked = sourceItems.slice(0, 12);
-    const nextRows = wf.rows.map((r, idx) => {
-      const src = picked[idx];
-      if (!src) return r;
+    const targetLen = Math.max(wf.rows.length, sourceItems.length);
+    const nextRows: WeeklyStockRow[] = Array.from({ length: targetLen }, (_, idx) => {
+      const base = wf.rows[idx] ?? makeBlankWeeklyRow(activeForm, String(idx + 1), idx);
+      const src = sourceItems[idx];
+      if (!src) return base;
       const expStr = src.expiryDate ? src.expiryDate.split('-').reverse().join('/') : '';
-      const nextChecks = [...r.checks];
+      const nextChecks = [...base.checks];
       nextChecks[0] = { qty: String(src.quantity), expDate: expStr };
       return {
-        ...r,
+        ...base,
         slNo: String(idx + 1),
         medicationName: src.name,
         wardQuantity: `${src.parLevel} ${src.unitOfMeasure}`,
@@ -216,6 +275,17 @@ export function PharmacyFormsView({
               </button>
             </div>
 
+            {viewMode === 'editor' && (
+              <button
+                type="button"
+                onClick={() => handleAddRowsToActiveForm(1)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Item
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleAutoPopulateFromInventory}
@@ -259,13 +329,19 @@ export function PharmacyFormsView({
       {viewMode === 'editor' && (
         <div className="no-print">
           {activeForm === 'cad' && (
-            <CadEditor form={forms.cad} onChange={onUpdateCad} today={today} />
+            <CadEditor
+              form={forms.cad}
+              onChange={onUpdateCad}
+              onAddRows={handleAddRowsToActiveForm}
+              today={today}
+            />
           )}
 
           {activeForm === 'monthly-store' && (
             <MonthlyStoreEditor
               form={forms.monthlyStore}
               onChange={onUpdateMonthlyStore}
+              onAddRows={handleAddRowsToActiveForm}
               today={today}
             />
           )}
@@ -274,6 +350,7 @@ export function PharmacyFormsView({
             <WeeklyStockEditor
               form={forms.weeklyForms[activeForm]}
               onChange={(patch) => onUpdateWeeklyForm(activeForm, patch)}
+              onAddRows={handleAddRowsToActiveForm}
               today={today}
             />
           )}
@@ -298,12 +375,16 @@ export function PharmacyFormsView({
 function CadEditor({
   form,
   onChange,
+  onAddRows,
   today,
 }: {
   form: CadChecklistForm;
   onChange: (patch: Partial<CadChecklistForm>) => void;
+  onAddRows: (count: number) => void;
   today: string;
 }) {
+  const pageCount = Math.max(1, Math.ceil(form.rows.length / CAD_ROWS_PER_PAGE));
+
   const updateDayDate = (dayIdx: number, val: string) => {
     const next = [...form.dayDates];
     next[dayIdx] = val;
@@ -327,6 +408,11 @@ function CadEditor({
       return { ...r, shifts };
     });
     onChange({ rows: next });
+  };
+
+  const removeRow = (rowIdx: number) => {
+    if (form.rows.length <= 1) return;
+    onChange({ rows: form.rows.filter((_, idx) => idx !== rowIdx) });
   };
 
   const updateTlCell = (
@@ -389,6 +475,9 @@ function CadEditor({
                   />
                 </th>
               ))}
+              <th rowSpan={2} className="p-1.5 text-center font-semibold w-10">
+                <span className="sr-only">Remove</span>
+              </th>
             </tr>
             <tr className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-600">
               <th className="p-1.5 border-r border-slate-200 text-center font-semibold">
@@ -454,6 +543,17 @@ function CadEditor({
                       />
                     </td>
                   ))}
+                  <td className="p-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(rIdx)}
+                      disabled={form.rows.length <= 1}
+                      title="Remove item row"
+                      className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -479,6 +579,7 @@ function CadEditor({
                   />
                 </td>
               ))}
+              <td />
             </tr>
 
             {/* Previous Shift TL */}
@@ -502,10 +603,18 @@ function CadEditor({
                   />
                 </td>
               ))}
+              <td />
             </tr>
           </tbody>
         </table>
       </div>
+
+      <FormRowControls
+        rowCount={form.rows.length}
+        pageCount={pageCount}
+        orientationLabel="A4 Landscape"
+        onAddRows={onAddRows}
+      />
     </div>
   );
 }
@@ -514,12 +623,16 @@ function CadEditor({
 function WeeklyStockEditor({
   form,
   onChange,
+  onAddRows,
   today,
 }: {
   form: WeeklyStockChecklistForm;
   onChange: (patch: Partial<WeeklyStockChecklistForm>) => void;
+  onAddRows: (count: number) => void;
   today: string;
 }) {
+  const pageCount = Math.max(1, Math.ceil(form.rows.length / WEEKLY_ROWS_PER_PAGE));
+
   const updateWeekDate = (wIdx: number, val: string) => {
     const next = [...form.weekDates];
     next[wIdx] = val;
@@ -547,6 +660,11 @@ function WeeklyStockEditor({
       return { ...r, checks };
     });
     onChange({ rows: next });
+  };
+
+  const removeRow = (rIdx: number) => {
+    if (form.rows.length <= 1) return;
+    onChange({ rows: form.rows.filter((_, idx) => idx !== rIdx) });
   };
 
   const updateSig = (wIdx: number, val: string) => {
@@ -611,6 +729,9 @@ function WeeklyStockEditor({
                   </div>
                 </th>
               ))}
+              <th rowSpan={2} className="p-1.5 w-10 text-center">
+                <span className="sr-only">Remove</span>
+              </th>
             </tr>
             <tr className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-600">
               {Array.from({ length: 5 }).map((_, idx) => (
@@ -690,6 +811,17 @@ function WeeklyStockEditor({
                     </td>
                   );
                 })}
+                <td className="p-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => removeRow(rIdx)}
+                    disabled={form.rows.length <= 1}
+                    title="Remove item row"
+                    className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </td>
               </tr>
             ))}
 
@@ -709,10 +841,18 @@ function WeeklyStockEditor({
                   />
                 </td>
               ))}
+              <td />
             </tr>
           </tbody>
         </table>
       </div>
+
+      <FormRowControls
+        rowCount={form.rows.length}
+        pageCount={pageCount}
+        orientationLabel="A4 Landscape"
+        onAddRows={onAddRows}
+      />
     </div>
   );
 }
@@ -721,12 +861,16 @@ function WeeklyStockEditor({
 function MonthlyStoreEditor({
   form,
   onChange,
+  onAddRows,
   today,
 }: {
   form: MonthlyStoreChecklistForm;
   onChange: (patch: Partial<MonthlyStoreChecklistForm>) => void;
+  onAddRows: (count: number) => void;
   today: string;
 }) {
+  const pageCount = Math.max(1, Math.ceil(form.rows.length / MONTHLY_STORE_ROWS_PER_PAGE));
+
   const updateRow = (
     rIdx: number,
     field: 'stockNo' | 'description' | 'qtyAvailable' | 'expiryDate1' | 'expiryDate2',
@@ -734,6 +878,11 @@ function MonthlyStoreEditor({
   ) => {
     const next = form.rows.map((r, i) => (i === rIdx ? { ...r, [field]: val } : r));
     onChange({ rows: next });
+  };
+
+  const removeRow = (rIdx: number) => {
+    if (form.rows.length <= 1) return;
+    onChange({ rows: form.rows.filter((_, idx) => idx !== rIdx) });
   };
 
   return (
@@ -771,7 +920,10 @@ function MonthlyStoreEditor({
               <th className="p-2 border-r border-slate-200 min-w-[240px]">Item description</th>
               <th className="p-2 border-r border-slate-200 w-36">Quantity available</th>
               <th className="p-2 border-r border-slate-200 w-36">Expiry Date 1</th>
-              <th className="p-2 w-36">Expiry Date 2</th>
+              <th className="p-2 border-r border-slate-200 w-36">Expiry Date 2</th>
+              <th className="p-2 w-10 text-center">
+                <span className="sr-only">Remove</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -823,7 +975,7 @@ function MonthlyStoreEditor({
                       className={`w-full px-2 py-1 text-xs font-mono text-center border rounded focus:outline-none focus:ring-1 focus:ring-teal-700 ${cls(sev1)}`}
                     />
                   </td>
-                  <td className="p-1">
+                  <td className="p-1 border-r border-slate-200">
                     <input
                       type="text"
                       value={row.expiryDate2}
@@ -832,12 +984,30 @@ function MonthlyStoreEditor({
                       className={`w-full px-2 py-1 text-xs font-mono text-center border rounded focus:outline-none focus:ring-1 focus:ring-teal-700 ${cls(sev2)}`}
                     />
                   </td>
+                  <td className="p-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(rIdx)}
+                      disabled={form.rows.length <= 1}
+                      title="Remove item row"
+                      className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      <FormRowControls
+        rowCount={form.rows.length}
+        pageCount={pageCount}
+        orientationLabel="A4 Portrait"
+        onAddRows={onAddRows}
+      />
 
       {/* Sign-off Fields */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl pt-1">
@@ -869,6 +1039,46 @@ function MonthlyStoreEditor({
             className="w-full px-3 py-1.5 text-sm font-mono border border-slate-200 rounded-md"
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function FormRowControls({
+  rowCount,
+  pageCount,
+  orientationLabel,
+  onAddRows,
+}: {
+  rowCount: number;
+  pageCount: number;
+  orientationLabel: string;
+  onAddRows: (count: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onAddRows(1)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add Item
+        </button>
+        <button
+          type="button"
+          onClick={() => onAddRows(5)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add 5 Rows
+        </button>
+      </div>
+
+      <div className="text-xs text-slate-500 tabular-nums">
+        {rowCount} {rowCount === 1 ? 'item' : 'items'} · Prints on {pageCount}{' '}
+        {orientationLabel} {pageCount === 1 ? 'page' : 'pages'}
       </div>
     </div>
   );
