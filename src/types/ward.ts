@@ -241,11 +241,46 @@ export interface MonthlyStoreChecklistForm {
   date: string;
 }
 
+export interface PharmacyRequestItemRow {
+  id: string;
+  itemCode: string;
+  description: string;
+  uom: string;
+  reqQty: string;
+  suppliedQty: string;
+  lotNo: string;
+  expiryDate: string;
+}
+
+export interface PharmacyRequestForm {
+  requestDate: string;
+  requesterLocation: string;
+  requesterCostCenter: string;
+  contactNo: string;
+  requesterName: string;
+  requesterCpr: string;
+  requesterSignature: string;
+  remarks: string;
+  rows: PharmacyRequestItemRow[];
+  preparedFromLocation: string;
+  preparerCostCenter: string;
+  preparationDate: string;
+  preparedBy: string;
+  preparerCpr: string;
+  preparerSign: string;
+  receivingDate: string;
+  receiverLocation: string;
+  receivedBy: string;
+  receiverCpr: string;
+  receiverSign: string;
+}
+
 export interface PharmacyFormsState {
   autoSyncNearExpiry?: boolean;
   cad: CadChecklistForm;
   weeklyForms: Record<WeeklyStockFormId, WeeklyStockChecklistForm>;
   monthlyStore: MonthlyStoreChecklistForm;
+  requestForm: PharmacyRequestForm;
 }
 
 export interface WardStoreData {

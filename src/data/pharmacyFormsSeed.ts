@@ -1,6 +1,7 @@
 import type {
   MonthlyStoreChecklistForm,
   PharmacyFormsState,
+  PharmacyRequestForm,
   WeeklyStockChecklistForm,
   WeeklyStockFormId,
 } from '../types/ward';
@@ -71,6 +72,40 @@ export function createInitialMonthlyStoreForm(): MonthlyStoreChecklistForm {
   };
 }
 
+export function createInitialPharmacyRequestForm(): PharmacyRequestForm {
+  return {
+    requestDate: '',
+    requesterLocation: '',
+    requesterCostCenter: '',
+    contactNo: '',
+    requesterName: '',
+    requesterCpr: '',
+    requesterSignature: '',
+    remarks: '',
+    rows: Array.from({ length: 12 }, (_, idx) => ({
+      id: `req-r-${idx + 1}`,
+      itemCode: '',
+      description: '',
+      uom: '',
+      reqQty: '',
+      suppliedQty: '',
+      lotNo: '',
+      expiryDate: '',
+    })),
+    preparedFromLocation: '',
+    preparerCostCenter: '',
+    preparationDate: '',
+    preparedBy: '',
+    preparerCpr: '',
+    preparerSign: '',
+    receivingDate: '',
+    receiverLocation: '',
+    receivedBy: '',
+    receiverCpr: '',
+    receiverSign: '',
+  };
+}
+
 export function createInitialPharmacyForms(): PharmacyFormsState {
   return {
     cad: {
@@ -109,5 +144,6 @@ export function createInitialPharmacyForms(): PharmacyFormsState {
       ),
     },
     monthlyStore: createInitialMonthlyStoreForm(),
+    requestForm: createInitialPharmacyRequestForm(),
   };
 }

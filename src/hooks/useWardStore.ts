@@ -12,6 +12,7 @@ import type {
   MonthlyStoreChecklistForm,
   OxygenCheckLog,
   OxygenCylinder,
+  PharmacyRequestForm,
   RoundCheckResult,
   ScheduleTask,
   TicketStatus,
@@ -35,13 +36,18 @@ function loadInitialStore(): WardStoreData {
           Array.isArray(parsed.crashCarts) && parsed.crashCarts.length > 0
             ? parsed.crashCarts
             : initial.crashCarts;
+        const baseForms = createInitialPharmacyForms();
         const rawPharmacyForms = parsed.pharmacyForms
           ? {
-              ...createInitialPharmacyForms(),
+              ...baseForms,
               ...parsed.pharmacyForms,
               weeklyForms: {
-                ...createInitialPharmacyForms().weeklyForms,
+                ...baseForms.weeklyForms,
                 ...(parsed.pharmacyForms.weeklyForms || {}),
+              },
+              requestForm: {
+                ...baseForms.requestForm,
+                ...(parsed.pharmacyForms.requestForm || {}),
               },
             }
           : initial.pharmacyForms;
@@ -487,6 +493,16 @@ export function useWardStore() {
     });
   };
 
+  const updatePharmacyRequestForm = (patch: Partial<PharmacyRequestForm>) => {
+    setData((prev) => ({
+      ...prev,
+      pharmacyForms: {
+        ...prev.pharmacyForms,
+        requestForm: { ...prev.pharmacyForms.requestForm, ...patch },
+      },
+    }));
+  };
+
   const setAutoSyncNearExpiry = (enabled: boolean) => {
     setData((prev) => {
       const updated = {
@@ -516,13 +532,18 @@ export function useWardStore() {
       Array.isArray(imported.crashCarts) && imported.crashCarts.length > 0
         ? imported.crashCarts
         : initial.crashCarts;
+    const baseForms = createInitialPharmacyForms();
     const rawForms = imported.pharmacyForms
       ? {
-          ...createInitialPharmacyForms(),
+          ...baseForms,
           ...imported.pharmacyForms,
           weeklyForms: {
-            ...createInitialPharmacyForms().weeklyForms,
+            ...baseForms.weeklyForms,
             ...(imported.pharmacyForms.weeklyForms || {}),
+          },
+          requestForm: {
+            ...baseForms.requestForm,
+            ...(imported.pharmacyForms.requestForm || {}),
           },
         }
       : initial.pharmacyForms;
@@ -570,6 +591,7 @@ export function useWardStore() {
     updateCadForm,
     updateWeeklyStockForm,
     updateMonthlyStoreForm,
+    updatePharmacyRequestForm,
     setAutoSyncNearExpiry,
     resyncNearExpiry,
     importBackupData,

@@ -1,6 +1,24 @@
-import { Eye, FileEdit, Plus, Printer, RefreshCw, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import {
+  Check,
+  Eye,
+  FileEdit,
+  Plus,
+  Printer,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
+import {
+  ALL_PHARMACY_REQUEST_CATALOG_ITEMS,
+  IV_LOTION_ITEMS,
+  PHARMACY_STOCK_ITEMS,
+  type PharmacyCatalogItem,
+  type RequestCatalogSource,
+} from '../data/pharmacyRequestCatalog';
 import type {
   CadChecklistForm,
   CadDrugRow,
@@ -9,6 +27,8 @@ import type {
   MonthlyStoreChecklistForm,
   MonthlyStoreRow,
   PharmacyFormsState,
+  PharmacyRequestForm,
+  PharmacyRequestItemRow,
   WeeklyStockChecklistForm,
   WeeklyStockFormId,
   WeeklyStockRow,
@@ -20,11 +40,13 @@ import {
   CadPrintPage,
   MONTHLY_STORE_ROWS_PER_PAGE,
   MonthlyStorePrintPage,
+  PharmacyRequestPrintPage,
+  REQUEST_ROWS_PER_PAGE,
   WEEKLY_ROWS_PER_PAGE,
   WeeklyStockPrintPage,
 } from './PharmacyFormsPrintView';
 
-type ActivePharmacyFormId = 'cad' | WeeklyStockFormId | 'monthly-store';
+type ActivePharmacyFormId = 'cad' | WeeklyStockFormId | 'monthly-store' | 'request-form';
 
 interface PharmacyFormsViewProps {
   forms: PharmacyFormsState;
@@ -38,6 +60,7 @@ interface PharmacyFormsViewProps {
     patch: Partial<WeeklyStockChecklistForm>
   ) => void;
   onUpdateMonthlyStore: (patch: Partial<MonthlyStoreChecklistForm>) => void;
+  onUpdateRequestForm: (patch: Partial<PharmacyRequestForm>) => void;
   onToggleAutoSyncNearExpiry: (enabled: boolean) => void;
   onResyncNearExpiry: () => void;
 }
@@ -49,6 +72,12 @@ const FORM_TABS: { id: ActivePharmacyFormId; label: string; orientation: 'Landsc
   { id: 'refrigerator', label: 'Refrigerator Stock', orientation: 'Landscape', code: 'GH/NUR/2025-17' },
   { id: 'stock-meds', label: 'Medication Stock', orientation: 'Landscape', code: 'GH/NUR/2025-18' },
   { id: 'monthly-store', label: 'Monthly Store', orientation: 'Portrait', code: 'GH/NUR/2025-19' },
+  {
+    id: 'request-form',
+    label: 'Pharmacy Request Form',
+    orientation: 'Landscape',
+    code: 'Material Request Form - Pharmacy',
+  },
 ];
 
 export function PharmacyFormsView({
@@ -60,6 +89,7 @@ export function PharmacyFormsView({
   onUpdateCad,
   onUpdateWeeklyForm,
   onUpdateMonthlyStore,
+  onUpdateRequestForm,
   onToggleAutoSyncNearExpiry,
   onResyncNearExpiry,
 }: PharmacyFormsViewProps) {
@@ -110,6 +140,17 @@ export function PharmacyFormsView({
     expiryDate2: '',
   });
 
+  const makeBlankRequestRow = (offset = 0): PharmacyRequestItemRow => ({
+    id: `req-r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${offset}`,
+    itemCode: '',
+    description: '',
+    uom: '',
+    reqQty: '',
+    suppliedQty: '',
+    lotNo: '',
+    expiryDate: '',
+  });
+
   const handleAddRowsToActiveForm = (count: number) => {
     if (activeForm === 'cad') {
       const additions = Array.from({ length: count }, (_, idx) => makeBlankCadRow(idx));
@@ -120,6 +161,12 @@ export function PharmacyFormsView({
     if (activeForm === 'monthly-store') {
       const additions = Array.from({ length: count }, (_, idx) => makeBlankMonthlyStoreRow(idx));
       onUpdateMonthlyStore({ rows: [...forms.monthlyStore.rows, ...additions] });
+      return;
+    }
+
+    if (activeForm === 'request-form') {
+      const additions = Array.from({ length: count }, (_, idx) => makeBlankRequestRow(idx));
+      onUpdateRequestForm({ rows: [...forms.requestForm.rows, ...additions] });
       return;
     }
 
@@ -138,6 +185,57 @@ export function PharmacyFormsView({
       const [y, m, d] = today.split('-');
       return `${d}/${m}/${y}`;
     })();
+
+    if (activeForm === 'request-form') {
+      const rf = forms.requestForm;
+      const lowStockMeds = inventory.filter(
+        (it) =>
+          (it.categoryId === 'iv-meds' ||
+            it.categoryId === 'prep-room' ||
+            it.categoryId === 'store') &&
+          it.quantity < it.parLevel
+      );
+
+      const nextRows = [...rf.rows];
+      for (let i = 0; i < lowStockMeds.length; i++) {
+        const src = lowStockMeds[i];
+        const needed = Math.max(1, src.parLevel - src.quantity);
+        const already = nextRows.some(
+          (r) => r.description.trim().toLowerCase() === src.name.trim().toLowerCase()
+        );
+        if (already) continue;
+
+        const emptyIdx = nextRows.findIndex(
+          (r) => !r.description.trim() && !r.itemCode.trim()
+        );
+        const populated: PharmacyRequestItemRow = {
+          id:
+            emptyIdx >= 0
+              ? nextRows[emptyIdx].id
+              : makeBlankRequestRow(i).id,
+          itemCode: src.batchOrSerial || '',
+          description: src.name,
+          uom: src.unitOfMeasure || '',
+          reqQty: String(needed),
+          suppliedQty: '',
+          lotNo: '',
+          expiryDate: '',
+        };
+        if (emptyIdx >= 0) {
+          nextRows[emptyIdx] = populated;
+        } else {
+          nextRows.push(populated);
+        }
+      }
+
+      onUpdateRequestForm({
+        requestDate: rf.requestDate || slashToday,
+        requesterLocation: rf.requesterLocation || wardName,
+        requesterName: rf.requesterName || defaultInspector,
+        rows: nextRows,
+      });
+      return;
+    }
 
     if (activeForm === 'monthly-store') {
       const storeItems = inventory.filter((i) => i.categoryId === 'store');
@@ -217,7 +315,7 @@ export function PharmacyFormsView({
 
       const addedWardRows: WeeklyStockRow[] = wardExpiring
         .filter((src) => !existingNames.has(src.name.trim().toLowerCase()))
-        .map((src, idx) => {
+        .map((src) => {
           const expStr = src.expiryDate ? src.expiryDate.split('-').reverse().join('/') : '';
           return {
             id: `near-ward-${src.id}`,
@@ -290,6 +388,8 @@ export function PharmacyFormsView({
       onUpdateCad(fresh.cad);
     } else if (activeForm === 'monthly-store') {
       onUpdateMonthlyStore(fresh.monthlyStore);
+    } else if (activeForm === 'request-form') {
+      onUpdateRequestForm(fresh.requestForm);
     } else {
       if (activeForm === 'near-expiry' && isAutoSyncOn) {
         onToggleAutoSyncNearExpiry(false);
@@ -458,14 +558,25 @@ export function PharmacyFormsView({
             />
           )}
 
-          {activeForm !== 'cad' && activeForm !== 'monthly-store' && (
-            <WeeklyStockEditor
-              form={forms.weeklyForms[activeForm]}
-              onChange={(patch) => onUpdateWeeklyForm(activeForm, patch)}
+          {activeForm === 'request-form' && (
+            <PharmacyRequestEditor
+              form={forms.requestForm}
+              onChange={onUpdateRequestForm}
               onAddRows={handleAddRowsToActiveForm}
               today={today}
             />
           )}
+
+          {activeForm !== 'cad' &&
+            activeForm !== 'monthly-store' &&
+            activeForm !== 'request-form' && (
+              <WeeklyStockEditor
+                form={forms.weeklyForms[activeForm]}
+                onChange={(patch) => onUpdateWeeklyForm(activeForm, patch)}
+                onAddRows={handleAddRowsToActiveForm}
+                today={today}
+              />
+            )}
         </div>
       )}
 
@@ -475,9 +586,12 @@ export function PharmacyFormsView({
       >
         {activeForm === 'cad' && <CadPrintPage form={forms.cad} />}
         {activeForm === 'monthly-store' && <MonthlyStorePrintPage form={forms.monthlyStore} />}
-        {activeForm !== 'cad' && activeForm !== 'monthly-store' && (
-          <WeeklyStockPrintPage form={forms.weeklyForms[activeForm]} />
-        )}
+        {activeForm === 'request-form' && <PharmacyRequestPrintPage form={forms.requestForm} />}
+        {activeForm !== 'cad' &&
+          activeForm !== 'monthly-store' &&
+          activeForm !== 'request-form' && (
+            <WeeklyStockPrintPage form={forms.weeklyForms[activeForm]} />
+          )}
       </div>
     </div>
   );
@@ -1191,6 +1305,593 @@ function FormRowControls({
       <div className="text-xs text-slate-500 tabular-nums">
         {rowCount} {rowCount === 1 ? 'item' : 'items'} · Prints on {pageCount}{' '}
         {orientationLabel} {pageCount === 1 ? 'page' : 'pages'}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- PHARMACY REQUEST FORM INTERACTIVE EDITOR ---------- */
+function PharmacyRequestEditor({
+  form,
+  onChange,
+  onAddRows,
+  today,
+}: {
+  form: PharmacyRequestForm;
+  onChange: (patch: Partial<PharmacyRequestForm>) => void;
+  onAddRows: (count: number) => void;
+  today: string;
+}) {
+  const [catalogFilter, setCatalogFilter] = useState<'all' | RequestCatalogSource>('all');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(true);
+
+  const pageCount = Math.max(1, Math.ceil(form.rows.length / REQUEST_ROWS_PER_PAGE));
+
+  const filteredCatalog = useMemo(() => {
+    const base =
+      catalogFilter === 'iv-lotion'
+        ? IV_LOTION_ITEMS
+        : catalogFilter === 'pharmacy-stock'
+          ? PHARMACY_STOCK_ITEMS
+          : ALL_PHARMACY_REQUEST_CATALOG_ITEMS;
+    const q = catalogSearch.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter(
+      (item) =>
+        item.description.toLowerCase().includes(q) ||
+        item.itemCode.toLowerCase().includes(q)
+    );
+  }, [catalogFilter, catalogSearch]);
+
+  const addedCountsByCodeDesc = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of form.rows) {
+      const code = r.itemCode.trim().toLowerCase();
+      const desc = r.description.trim().toLowerCase();
+      if (!code && !desc) continue;
+      const key = `${code}::${desc}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }, [form.rows]);
+
+  const handleAddCatalogItem = (item: PharmacyCatalogItem) => {
+    const nextRows = [...form.rows];
+    const emptyIdx = nextRows.findIndex(
+      (r) => !r.itemCode.trim() && !r.description.trim()
+    );
+
+    const newEntry: PharmacyRequestItemRow = {
+      id:
+        emptyIdx >= 0
+          ? nextRows[emptyIdx].id
+          : `req-r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      itemCode: item.itemCode,
+      description: item.description,
+      uom: item.defaultUom,
+      reqQty: '',
+      suppliedQty: '',
+      lotNo: '',
+      expiryDate: '',
+    };
+
+    if (emptyIdx >= 0) {
+      nextRows[emptyIdx] = newEntry;
+    } else {
+      nextRows.push(newEntry);
+    }
+    onChange({ rows: nextRows });
+  };
+
+  const updateRowField = (
+    rIdx: number,
+    field: keyof Omit<PharmacyRequestItemRow, 'id'>,
+    val: string
+  ) => {
+    const next = form.rows.map((r, i) => (i === rIdx ? { ...r, [field]: val } : r));
+    onChange({ rows: next });
+  };
+
+  const removeRow = (rIdx: number) => {
+    if (form.rows.length <= 1) return;
+    onChange({ rows: form.rows.filter((_, idx) => idx !== rIdx) });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Catalog Quick-Add Picker */}
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Add Items from Official Catalogs
+            </h3>
+            <p className="text-xs text-slate-500">
+              Select from IV &amp; Lotion Items ({IV_LOTION_ITEMS.length}) or Pharmacy Stock Items (
+              {PHARMACY_STOCK_ITEMS.length}) to populate item code and description automatically.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-md cursor-pointer"
+          >
+            {pickerOpen ? 'Hide Catalog' : 'Show Catalog'}
+          </button>
+        </div>
+
+        {pickerOpen && (
+          <div className="p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter('all')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    catalogFilter === 'all'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All ({ALL_PHARMACY_REQUEST_CATALOG_ITEMS.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter('iv-lotion')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    catalogFilter === 'iv-lotion'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  IV &amp; Lotion Items ({IV_LOTION_ITEMS.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter('pharmacy-stock')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    catalogFilter === 'pharmacy-stock'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Pharmacy Stock Items ({PHARMACY_STOCK_ITEMS.length})
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                  placeholder="Search description or item code..."
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+            </div>
+
+            <div className="border border-slate-200 rounded-md max-h-60 overflow-y-auto divide-y divide-slate-100">
+              {filteredCatalog.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500">
+                  No catalog items match &ldquo;{catalogSearch}&rdquo;.
+                </div>
+              ) : (
+                filteredCatalog.map((item) => {
+                  const key = `${item.itemCode.toLowerCase()}::${item.description.toLowerCase()}`;
+                  const addedCount = addedCountsByCodeDesc.get(key) || 0;
+                  return (
+                    <div
+                      key={item.id}
+                      className="px-3 py-2 flex items-center justify-between gap-3 hover:bg-slate-50 text-xs"
+                    >
+                      <div className="min-w-0 flex-1 flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                          {item.itemCode}
+                        </span>
+                        <span className="text-slate-900 font-medium truncate">
+                          {item.description}
+                        </span>
+                        <span className="text-[11px] text-slate-500 shrink-0">
+                          {item.catalog === 'iv-lotion' ? 'IV & Lotion' : 'Pharmacy Stock'} ·{' '}
+                          {item.defaultUom}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddCatalogItem(item)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors shrink-0 cursor-pointer ${
+                          addedCount > 0
+                            ? 'bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100'
+                            : 'bg-teal-700 text-white hover:bg-teal-800'
+                        }`}
+                      >
+                        {addedCount > 0 ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            Added ({addedCount})
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3 h-3" />
+                            Add
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Main Editable Request Form */}
+      <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-5">
+        {/* Requester Details */}
+        <div className="space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+            Requester Details
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Request Date
+              </label>
+              <input
+                type="text"
+                value={form.requestDate}
+                onChange={(e) => onChange({ requestDate: e.target.value })}
+                placeholder="DD/MM/YYYY"
+                className="w-full px-3 py-1.5 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Location</label>
+              <input
+                type="text"
+                value={form.requesterLocation}
+                onChange={(e) => onChange({ requesterLocation: e.target.value })}
+                placeholder="e.g., CCU / SD Ward"
+                className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Cost Center</label>
+              <input
+                type="text"
+                value={form.requesterCostCenter}
+                onChange={(e) => onChange({ requesterCostCenter: e.target.value })}
+                className="w-full px-3 py-1.5 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Contact #</label>
+              <input
+                type="text"
+                value={form.contactNo}
+                onChange={(e) => onChange({ contactNo: e.target.value })}
+                className="w-full px-3 py-1.5 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Requester Name
+              </label>
+              <input
+                type="text"
+                value={form.requesterName}
+                onChange={(e) => onChange({ requesterName: e.target.value })}
+                className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">CPR</label>
+              <input
+                type="text"
+                value={form.requesterCpr}
+                onChange={(e) => onChange({ requesterCpr: e.target.value })}
+                className="w-full px-3 py-1.5 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Signature</label>
+              <input
+                type="text"
+                value={form.requesterSignature}
+                onChange={(e) => onChange({ requesterSignature: e.target.value })}
+                className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Remarks / Justification
+            </label>
+            <input
+              type="text"
+              value={form.remarks}
+              onChange={(e) => onChange({ remarks: e.target.value })}
+              placeholder="Optional clinical remarks or justification..."
+              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+            />
+          </div>
+        </div>
+
+        {/* Requested Items Table */}
+        <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-semibold text-slate-700">
+                <th colSpan={5} className="p-1.5 border-r border-slate-300 text-center">
+                  Details to be Filled by Requester
+                </th>
+                <th colSpan={4} className="p-1.5 text-center">
+                  To be Filled by Supplier
+                </th>
+              </tr>
+              <tr className="bg-slate-50 border-b border-slate-200 font-semibold text-slate-700">
+                <th className="p-2 border-r border-slate-200 w-10 text-center">#</th>
+                <th className="p-2 border-r border-slate-200 w-36">Item Code</th>
+                <th className="p-2 border-r border-slate-200 min-w-[260px]">Item Description</th>
+                <th className="p-2 border-r border-slate-200 w-24 text-center">UoM</th>
+                <th className="p-2 border-r border-slate-300 w-24 text-center">Req. Qty.</th>
+                <th className="p-2 border-r border-slate-200 w-24 text-center">Supplied Qty.</th>
+                <th className="p-2 border-r border-slate-200 w-28 text-center">Lot #</th>
+                <th className="p-2 border-r border-slate-200 w-32 text-center">Expiry Date</th>
+                <th className="p-2 w-10 text-center">
+                  <span className="sr-only">Remove</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {form.rows.map((row, rIdx) => {
+                const sev = getCrashCartSlotExpirySeverity(row.expiryDate, today);
+                const expClass =
+                  sev === 'expired'
+                    ? 'bg-rose-100 border-rose-400 text-rose-900 font-semibold'
+                    : sev === 'near-3m'
+                      ? 'bg-amber-100 border-amber-400 text-amber-950 font-semibold'
+                      : 'bg-white border-slate-200';
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50/70">
+                    <td className="p-1 border-r border-slate-200 text-center font-mono text-slate-500">
+                      {rIdx + 1}
+                    </td>
+                    <td className="p-1 border-r border-slate-200">
+                      <input
+                        type="text"
+                        value={row.itemCode}
+                        onChange={(e) => updateRowField(rIdx, 'itemCode', e.target.value)}
+                        placeholder="Code"
+                        className="w-full px-2 py-1 text-xs font-mono border border-transparent hover:border-slate-200 focus:border-teal-700 rounded focus:outline-none"
+                      />
+                    </td>
+                    <td className="p-1 border-r border-slate-200 bg-amber-50/40">
+                      <input
+                        type="text"
+                        value={row.description}
+                        onChange={(e) => updateRowField(rIdx, 'description', e.target.value)}
+                        placeholder="Select from catalog above or type description..."
+                        className="w-full px-2 py-1 text-xs bg-transparent border border-transparent hover:border-slate-200 focus:bg-white focus:border-teal-700 rounded focus:outline-none"
+                      />
+                    </td>
+                    <td className="p-1 border-r border-slate-200">
+                      <input
+                        type="text"
+                        value={row.uom}
+                        onChange={(e) => updateRowField(rIdx, 'uom', e.target.value)}
+                        placeholder="UoM"
+                        className="w-full px-1.5 py-1 text-xs text-center border border-transparent hover:border-slate-200 focus:border-teal-700 rounded focus:outline-none"
+                      />
+                    </td>
+                    <td className="p-1 border-r border-slate-300">
+                      <input
+                        type="text"
+                        value={row.reqQty}
+                        onChange={(e) => updateRowField(rIdx, 'reqQty', e.target.value)}
+                        placeholder="Qty"
+                        className="w-full px-1.5 py-1 text-xs font-mono text-center border border-transparent hover:border-slate-200 focus:border-teal-700 rounded focus:outline-none"
+                      />
+                    </td>
+                    <td className="p-1 border-r border-slate-200">
+                      <input
+                        type="text"
+                        value={row.suppliedQty}
+                        onChange={(e) => updateRowField(rIdx, 'suppliedQty', e.target.value)}
+                        className="w-full px-1.5 py-1 text-xs font-mono text-center border border-transparent hover:border-slate-200 focus:border-teal-700 rounded focus:outline-none"
+                      />
+                    </td>
+                    <td className="p-1 border-r border-slate-200">
+                      <input
+                        type="text"
+                        value={row.lotNo}
+                        onChange={(e) => updateRowField(rIdx, 'lotNo', e.target.value)}
+                        className="w-full px-1.5 py-1 text-xs font-mono text-center border border-transparent hover:border-slate-200 focus:border-teal-700 rounded focus:outline-none"
+                      />
+                    </td>
+                    <td className="p-1 border-r border-slate-200">
+                      <input
+                        type="text"
+                        value={row.expiryDate}
+                        onChange={(e) => updateRowField(rIdx, 'expiryDate', e.target.value)}
+                        placeholder="DD/MM/YYYY"
+                        className={`w-full px-1.5 py-1 text-xs font-mono text-center border rounded focus:outline-none focus:ring-1 focus:ring-teal-700 ${expClass}`}
+                      />
+                    </td>
+                    <td className="p-1 text-center">
+                      <button
+                        type="button"
+                        onClick={() => removeRow(rIdx)}
+                        disabled={form.rows.length <= 1}
+                        title="Remove item row"
+                        className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <FormRowControls
+          rowCount={form.rows.length}
+          pageCount={pageCount}
+          orientationLabel="A4 Landscape"
+          onAddRows={onAddRows}
+        />
+
+        {/* Preparer & Receiver Details */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 pt-2 border-t border-slate-200">
+          <div className="space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              Preparer Details (Optional / Pharmacy)
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Prepared from Location
+                </label>
+                <input
+                  type="text"
+                  value={form.preparedFromLocation}
+                  onChange={(e) => onChange({ preparedFromLocation: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Cost Center
+                </label>
+                <input
+                  type="text"
+                  value={form.preparerCostCenter}
+                  onChange={(e) => onChange({ preparerCostCenter: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Preparation Date
+                </label>
+                <input
+                  type="text"
+                  value={form.preparationDate}
+                  onChange={(e) => onChange({ preparationDate: e.target.value })}
+                  placeholder="DD/MM/YYYY"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Prepared by
+                </label>
+                <input
+                  type="text"
+                  value={form.preparedBy}
+                  onChange={(e) => onChange({ preparedBy: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Preparer&apos;s CPR #
+                </label>
+                <input
+                  type="text"
+                  value={form.preparerCpr}
+                  onChange={(e) => onChange({ preparerCpr: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Preparer&apos;s Sign
+                </label>
+                <input
+                  type="text"
+                  value={form.preparerSign}
+                  onChange={(e) => onChange({ preparerSign: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              Receiver Details (Optional / Ward Receipt)
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Receiving Date
+                </label>
+                <input
+                  type="text"
+                  value={form.receivingDate}
+                  onChange={(e) => onChange({ receivingDate: e.target.value })}
+                  placeholder="DD/MM/YYYY"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Location
+                </label>
+                <input
+                  type="text"
+                  value={form.receiverLocation}
+                  onChange={(e) => onChange({ receiverLocation: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Received by (Full Name)
+                </label>
+                <input
+                  type="text"
+                  value={form.receivedBy}
+                  onChange={(e) => onChange({ receivedBy: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Receiver&apos;s CPR #
+                </label>
+                <input
+                  type="text"
+                  value={form.receiverCpr}
+                  onChange={(e) => onChange({ receiverCpr: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Receiver&apos;s Sign.
+                </label>
+                <input
+                  type="text"
+                  value={form.receiverSign}
+                  onChange={(e) => onChange({ receiverSign: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

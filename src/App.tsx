@@ -50,6 +50,7 @@ export default function App() {
     updateCadForm,
     updateWeeklyStockForm,
     updateMonthlyStoreForm,
+    updatePharmacyRequestForm,
     setAutoSyncNearExpiry,
     resyncNearExpiry,
     importBackupData,
@@ -288,6 +289,7 @@ export default function App() {
                 onUpdateCad={updateCadForm}
                 onUpdateWeeklyForm={updateWeeklyStockForm}
                 onUpdateMonthlyStore={updateMonthlyStoreForm}
+                onUpdateRequestForm={updatePharmacyRequestForm}
                 onToggleAutoSyncNearExpiry={setAutoSyncNearExpiry}
                 onResyncNearExpiry={resyncNearExpiry}
               />
