@@ -7,6 +7,7 @@ import {
   createInitialIvMedsItems,
 } from './ivMedsSeed';
 import { createInitialPharmacyForms } from './pharmacyFormsSeed';
+import { createInitialProcedureTrolleyItems } from './procedureTrolleySeed';
 import { createInitialStoreItems } from './storeItemsSeed';
 import {
   createInitialTransferBagItems,
@@ -48,8 +49,9 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
     id: 'procedure-trolley',
     label: 'Procedure Trolley',
     shortLabel: 'Procedure Trolley',
-    description: 'Sterile procedure kits, dressing trays, local anesthetics, and bedside surgical supplies.',
-    supportsUnitSplit: true,
+    description:
+      'Official 42-item Procedure Trolley checklist covering sterile central line kits, catheters, syringes, needles, sutures, dressings, and dual expiry dates.',
+    supportsUnitSplit: false,
   },
   {
     id: 'iv-meds',
@@ -96,6 +98,21 @@ export function createInitialStoreStaff(today: string) {
   ];
 }
 
+export function createInitialProcedureTrolleyStaff(today: string) {
+  const [y, m, d] = today.split('-');
+  const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
+  return [
+    {
+      id: 'pt-staff-1',
+      staffName: 'RN Tariq Youssef',
+      role: 'Staff Nurse / Trolley Lead',
+      assignedSections: 'All Procedure Trolley Items (No. 1–42)',
+      checkedDate: slashDate,
+      signature: '',
+    },
+  ];
+}
+
 export function createInitialSectionMeta(today: string): Record<string, SectionPeriodMeta> {
   const base = createDefaultSectionPeriodMeta(today);
   const [y, m, d] = today.split('-');
@@ -111,7 +128,13 @@ export function createInitialSectionMeta(today: string): Record<string, SectionP
     },
     'prep-room': { ...base },
     'blood-trolley': { ...base },
-    'procedure-trolley': { ...base },
+    'procedure-trolley': {
+      ...base,
+      staffName: 'RN Tariq Youssef',
+      signature: '',
+      date: slashDate,
+      staffAssignments: createInitialProcedureTrolleyStaff(today),
+    },
     environmental: { ...base },
   };
 }
@@ -485,52 +508,8 @@ export function createInitialWardData(): WardStoreData {
         notes: 'Stock adequate.',
       },
 
-      // Procedure Trolley
-      {
-        id: 'pt-01',
-        categoryId: 'procedure-trolley',
-        name: 'Triple-Lumen Central Venous Catheter Kit (7Fr)',
-        unit: 'CCU',
-        locationDetail: 'Procedure Trolley Shelf 2',
-        quantity: 4,
-        parLevel: 4,
-        unitOfMeasure: 'kits',
-        batchOrSerial: 'LOT-CVC-891',
-        expiryDate: addDaysIso(today, 240),
-        lastCheckedDate: addDaysIso(today, -4),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Full barrier drape packs paired beside kits.',
-      },
-      {
-        id: 'pt-02',
-        categoryId: 'procedure-trolley',
-        name: 'Lidocaine HCl 2% 20ml Multidose Vials (Unopened)',
-        unit: 'CCU',
-        locationDetail: 'Procedure Trolley Drawer 1',
-        quantity: 6,
-        parLevel: 6,
-        unitOfMeasure: 'vials',
-        batchOrSerial: 'LOT-LID-209',
-        expiryDate: addDaysIso(today, 15),
-        lastCheckedDate: addDaysIso(today, -4),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Expiring in 15 days — flag for replacement.',
-      },
-      {
-        id: 'pt-03',
-        categoryId: 'procedure-trolley',
-        name: 'Sterile Suture Removal & Dressing Packs',
-        unit: 'General Ward',
-        locationDetail: 'Procedure Trolley Drawer 2',
-        quantity: 12,
-        parLevel: 10,
-        unitOfMeasure: 'packs',
-        batchOrSerial: 'LOT-SDP-112',
-        expiryDate: addDaysIso(today, 310),
-        lastCheckedDate: addDaysIso(today, -4),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Chemical sterilization indicators verified.',
-      },
+      // Procedure Trolley (Official 42-Row Procedure Trolley Checklist)
+      ...createInitialProcedureTrolleyItems(today),
 
       // Stock IV Fluids & Medications (CAD, High-Alert, Refrigerator Stock, IV Fluids)
       ...createInitialIvMedsItems(today),

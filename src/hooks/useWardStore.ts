@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createInitialCrashCarts } from '../data/crashCartSeed';
 import {
   createDefaultSectionPeriodMeta,
+  createInitialProcedureTrolleyStaff,
   createInitialSectionMeta,
   createInitialStoreStaff,
   createInitialWardData,
@@ -11,6 +12,7 @@ import {
   createInitialIvMedsItems,
 } from '../data/ivMedsSeed';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
+import { createInitialProcedureTrolleyItems } from '../data/procedureTrolleySeed';
 import { createInitialStoreItems } from '../data/storeItemsSeed';
 import {
   createInitialTransferBagItems,
@@ -99,6 +101,22 @@ function migrateLegacyIvMedsInventory(
   return syncPharmacyFormItemsIntoIvMeds(baseInventory, forms, today, defaultInspector);
 }
 
+function migrateLegacyProcedureTrolleyInventory(
+  inventory: InventoryItem[],
+  today: string
+): InventoryItem[] {
+  const ptItems = inventory.filter((it) => it.categoryId === 'procedure-trolley');
+  const isLegacyThree =
+    ptItems.length === 3 &&
+    ptItems.every((it) => ['pt-01', 'pt-02', 'pt-03'].includes(it.id)) &&
+    ptItems.some((it) => it.name.includes('Triple-Lumen Central Venous Catheter Kit'));
+
+  if (!isLegacyThree) return inventory;
+
+  const nonPt = inventory.filter((it) => it.categoryId !== 'procedure-trolley');
+  return [...nonPt, ...createInitialProcedureTrolleyItems(today)];
+}
+
 function hydrateIvMedsAuditMeta(
   raw: IvMedsAuditMeta | undefined,
   today: string
@@ -163,6 +181,22 @@ function hydrateSectionMeta(
         } else {
           staffAssignments = createInitialStoreStaff(today);
         }
+      } else if (key === 'procedure-trolley') {
+        if (Array.isArray(val.staffAssignments) && val.staffAssignments.length > 0) {
+          staffAssignments = [...val.staffAssignments];
+        } else if (val.staffName || val.signature || val.date) {
+          const fallback = createInitialProcedureTrolleyStaff(today)[0];
+          staffAssignments = [
+            {
+              ...fallback,
+              staffName: val.staffName ?? fallback.staffName,
+              signature: val.signature ?? '',
+              checkedDate: val.date ?? fallback.checkedDate,
+            },
+          ];
+        } else {
+          staffAssignments = createInitialProcedureTrolleyStaff(today);
+        }
       }
       merged[key] = {
         wardNumber: val.wardNumber ?? def.wardNumber,
@@ -211,14 +245,17 @@ function loadInitialStore(): WardStoreData {
           : initial.pharmacyForms;
         const today = getTodayIso();
         const hydratedForms = syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts);
-        const migratedInventory = migrateLegacyIvMedsInventory(
-          migrateLegacyStoreInventory(
-            migrateLegacyTransferBagInventory(parsed.inventory),
-            today
+        const migratedInventory = migrateLegacyProcedureTrolleyInventory(
+          migrateLegacyIvMedsInventory(
+            migrateLegacyStoreInventory(
+              migrateLegacyTransferBagInventory(parsed.inventory),
+              today
+            ),
+            hydratedForms,
+            today,
+            parsed.defaultInspector || initial.defaultInspector
           ),
-          hydratedForms,
-          today,
-          parsed.defaultInspector || initial.defaultInspector
+          today
         );
         return {
           ...initial,
@@ -346,7 +383,10 @@ export function useWardStore() {
     setData((prev) => ({
       ...prev,
       inventory:
-        item.categoryId === 'transfer-bag' || item.categoryId === 'iv-meds'
+        item.categoryId === 'transfer-bag' ||
+        item.categoryId === 'iv-meds' ||
+        item.categoryId === 'procedure-trolley' ||
+        item.categoryId === 'store'
           ? [...prev.inventory, newItem]
           : [newItem, ...prev.inventory],
     }));

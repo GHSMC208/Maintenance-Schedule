@@ -32,6 +32,7 @@ import {
 } from '../utils/dateUtils';
 import { STORE_SECTIONS } from '../data/storeItemsSeed';
 import { EmergencyBagPrintView } from './EmergencyBagPrintView';
+import { ProcedureTrolleyPrintView } from './ProcedureTrolleyPrintView';
 import {
   StoreChecklistPrintView,
   type StorePrintLayoutMode,
@@ -69,10 +70,12 @@ export function InventoryModuleView({
   const today = getTodayIso();
   const isTransferBag = category.id === 'transfer-bag';
   const isStore = category.id === 'store';
+  const isProcedureTrolley = category.id === 'procedure-trolley';
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [unitFilter, setUnitFilter] = useState<'All' | 'CCU' | 'SD' | 'General Ward'>('All');
   const [storeSectionFilter, setStoreSectionFilter] = useState<string>('All');
   const [storePrintLayout, setStorePrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
+  const [trolleyPrintLayout, setTrolleyPrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
   const [collapsedStoreSections, setCollapsedStoreSections] = useState<Record<string, boolean>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'attention'>('all');
   const [search, setSearch] = useState('');
@@ -201,7 +204,7 @@ export function InventoryModuleView({
     setCollapsedStoreSections(next);
   };
 
-  const storeStaffAssignments: StoreStaffAssignment[] = useMemo(() => {
+  const sectionStaffAssignments: StoreStaffAssignment[] = useMemo(() => {
     if (sectionMeta?.staffAssignments && sectionMeta.staffAssignments.length > 0) {
       return sectionMeta.staffAssignments;
     }
@@ -209,17 +212,19 @@ export function InventoryModuleView({
     const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
     return [
       {
-        id: 'st-staff-1',
+        id: isProcedureTrolley ? 'pt-staff-1' : 'st-staff-1',
         staffName: sectionMeta?.staffName ?? defaultInspector,
-        role: 'Staff Nurse / Store Lead',
-        assignedSections: 'All Store Categories',
+        role: isProcedureTrolley ? 'Staff Nurse / Trolley Lead' : 'Staff Nurse / Store Lead',
+        assignedSections: isProcedureTrolley
+          ? 'All Procedure Trolley Items (No. 1–42)'
+          : 'All Store Categories',
         checkedDate: sectionMeta?.date || slashDate,
         signature: sectionMeta?.signature || '',
       },
     ];
-  }, [sectionMeta, defaultInspector, today]);
+  }, [sectionMeta, defaultInspector, today, isProcedureTrolley]);
 
-  const syncStoreStaffList = (nextList: StoreStaffAssignment[]) => {
+  const syncSectionStaffList = (nextList: StoreStaffAssignment[]) => {
     if (!onUpdateSectionMeta) return;
     const first = nextList[0];
     onUpdateSectionMeta({
@@ -230,24 +235,24 @@ export function InventoryModuleView({
     });
   };
 
-  const updateStoreStaffField = (
+  const updateSectionStaffField = (
     idx: number,
     field: keyof StoreStaffAssignment,
     val: string
   ) => {
-    const next = storeStaffAssignments.map((st, i) =>
+    const next = sectionStaffAssignments.map((st, i) =>
       i === idx ? { ...st, [field]: val } : st
     );
-    syncStoreStaffList(next);
+    syncSectionStaffList(next);
   };
 
-  const addStoreStaffRow = () => {
+  const addSectionStaffRow = () => {
     const [y, m, d] = today.split('-');
     const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
     const next: StoreStaffAssignment[] = [
-      ...storeStaffAssignments,
+      ...sectionStaffAssignments,
       {
-        id: `st-staff-${Date.now().toString(36)}`,
+        id: `${isProcedureTrolley ? 'pt' : 'st'}-staff-${Date.now().toString(36)}`,
         staffName: '',
         role: 'Staff Nurse',
         assignedSections: '',
@@ -255,12 +260,12 @@ export function InventoryModuleView({
         signature: '',
       },
     ];
-    syncStoreStaffList(next);
+    syncSectionStaffList(next);
   };
 
-  const removeStoreStaffRow = (idx: number) => {
-    if (storeStaffAssignments.length <= 1) return;
-    syncStoreStaffList(storeStaffAssignments.filter((_, i) => i !== idx));
+  const removeSectionStaffRow = (idx: number) => {
+    if (sectionStaffAssignments.length <= 1) return;
+    syncSectionStaffList(sectionStaffAssignments.filter((_, i) => i !== idx));
   };
 
   const openAdd = (presetStoreSection?: string) => {
@@ -271,10 +276,12 @@ export function InventoryModuleView({
       isStore
         ? presetStoreSection ||
             (storeSectionFilter !== 'All' ? storeSectionFilter : STORE_SECTIONS[0])
-        : ''
+        : isProcedureTrolley
+          ? `No. ${categoryItems.length + 1}`
+          : ''
     );
-    setFormQty(category.isEquipment ? 1 : isStore ? 0 : 10);
-    setFormPar(category.isEquipment ? 1 : isStore ? 0 : 10);
+    setFormQty(category.isEquipment ? 1 : isStore ? 0 : isProcedureTrolley ? 1 : 10);
+    setFormPar(category.isEquipment ? 1 : isStore ? 0 : isProcedureTrolley ? 1 : 10);
     setFormUom(category.isEquipment ? 'unit' : 'pcs');
     setFormBatch('');
     setFormOtherCode('');
@@ -319,11 +326,12 @@ export function InventoryModuleView({
       batchOrSerial: formBatch.trim() || '—',
       otherCode: isStore ? formOtherCode.trim() || undefined : editingItem?.otherCode,
       expiryDate: formExpiry ? formExpiry : null,
-      secondExpiryDate: isStore
-        ? formSecondExpiry
+      secondExpiryDate:
+        isStore || isProcedureTrolley
           ? formSecondExpiry
-          : null
-        : editingItem?.secondExpiryDate,
+            ? formSecondExpiry
+            : null
+          : editingItem?.secondExpiryDate,
       equipmentStatus: category.isEquipment ? formEqStatus : undefined,
       nextPmDate: category.isEquipment ? formNextPm || null : undefined,
       lastCheckedDate: today,
@@ -395,39 +403,109 @@ export function InventoryModuleView({
         </div>
 
         {!isTransferBag && !isStore && onUpdateSectionMeta && (
-          <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
-            <div>
-              <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                Ward Number
-              </label>
-              <input
-                type="text"
-                value={sectionMeta?.wardNumber || ''}
-                onChange={(e) => onUpdateSectionMeta({ wardNumber: e.target.value })}
-                placeholder="e.g., 208 / CCU"
-                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-              />
+          <div className="pt-4 border-t border-slate-200 flex flex-wrap items-end justify-between gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 max-w-2xl">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Ward Number
+                </label>
+                <input
+                  type="text"
+                  value={sectionMeta?.wardNumber || ''}
+                  onChange={(e) => onUpdateSectionMeta({ wardNumber: e.target.value })}
+                  placeholder="e.g., 208 / CCU"
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
+                <input
+                  type="text"
+                  value={sectionMeta?.month || ''}
+                  onChange={(e) => onUpdateSectionMeta({ month: e.target.value })}
+                  placeholder="e.g., November"
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
+                <input
+                  type="text"
+                  value={sectionMeta?.year || ''}
+                  onChange={(e) => onUpdateSectionMeta({ year: e.target.value })}
+                  placeholder="2026"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
-              <input
-                type="text"
-                value={sectionMeta?.month || ''}
-                onChange={(e) => onUpdateSectionMeta({ month: e.target.value })}
-                placeholder="e.g., November"
-                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
-              <input
-                type="text"
-                value={sectionMeta?.year || ''}
-                onChange={(e) => onUpdateSectionMeta({ year: e.target.value })}
-                placeholder="2026"
-                className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-              />
-            </div>
+
+            {isProcedureTrolley && (
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div
+                  className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                  title="Choose Procedure Trolley printout layout"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setTrolleyPrintLayout('two-per-sheet')}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                      trolleyPrintLayout === 'two-per-sheet'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    2 Tables / Sheet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTrolleyPrintLayout('one-per-sheet')}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                      trolleyPrintLayout === 'one-per-sheet'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    1 Table / Sheet
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('editor')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                      viewMode === 'editor'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FileEdit className="w-3.5 h-3.5" />
+                    Edit List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('print-preview')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                      viewMode === 'print-preview'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Print Preview
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print Checklist (A4)
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -636,8 +714,8 @@ export function InventoryModuleView({
         )}
       </div>
 
-      {/* Assigned Monthly Staff Card for Store Items */}
-      {isStore && viewMode === 'editor' && (
+      {/* Assigned Staff Card for Store Items & Procedure Trolley */}
+      {(isStore || isProcedureTrolley) && viewMode === 'editor' && (
         <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -645,22 +723,26 @@ export function InventoryModuleView({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-slate-900">
-                    Assigned Staff (Monthly Store Checklist)
+                    {isProcedureTrolley
+                      ? 'Assigned Staff (Procedure Trolley Checklist)'
+                      : 'Assigned Staff (Monthly Store Checklist)'}
                   </h3>
                   <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                    {storeStaffAssignments.filter((s) => s.staffName.trim()).length} /{' '}
-                    {storeStaffAssignments.length} Assigned
+                    {sectionStaffAssignments.filter((s) => s.staffName.trim()).length} /{' '}
+                    {sectionStaffAssignments.length} Assigned
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Assign one or more ward staff members to check Store categories. All assigned staff appear on the printed GH/NUR/2025-19 sign-off block.
+                  {isProcedureTrolley
+                    ? 'Assign one or more ward staff members to check Procedure Trolley items. All assigned staff appear on the printed checklist sign-off block.'
+                    : 'Assign one or more ward staff members to check Store categories. All assigned staff appear on the printed GH/NUR/2025-19 sign-off block.'}
                 </p>
               </div>
             </div>
 
             <button
               type="button"
-              onClick={addStoreStaffRow}
+              onClick={addSectionStaffRow}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -675,7 +757,9 @@ export function InventoryModuleView({
                   <th className="py-2 px-2.5 w-10 text-center">#</th>
                   <th className="py-2 px-2.5 min-w-[170px]">Staff Name</th>
                   <th className="py-2 px-2.5 min-w-[140px]">Role</th>
-                  <th className="py-2 px-2.5 min-w-[210px]">Assigned Categories</th>
+                  <th className="py-2 px-2.5 min-w-[210px]">
+                    {isProcedureTrolley ? 'Assigned Rows / Scope' : 'Assigned Categories'}
+                  </th>
                   <th className="py-2 px-2.5 w-32 text-center">Date Checked</th>
                   <th className="py-2 px-2.5 w-36 text-center">Signature</th>
                   <th className="py-2 px-2 w-10 text-center">
@@ -684,14 +768,14 @@ export function InventoryModuleView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {storeStaffAssignments.map((st, idx) => (
+                {sectionStaffAssignments.map((st, idx) => (
                   <tr key={st.id} className="hover:bg-slate-50/70">
                     <td className="p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
                     <td className="p-1.5">
                       <input
                         type="text"
                         value={st.staffName}
-                        onChange={(e) => updateStoreStaffField(idx, 'staffName', e.target.value)}
+                        onChange={(e) => updateSectionStaffField(idx, 'staffName', e.target.value)}
                         placeholder={`Staff ${idx + 1} full name`}
                         className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
                       />
@@ -700,8 +784,12 @@ export function InventoryModuleView({
                       <input
                         type="text"
                         value={st.role}
-                        onChange={(e) => updateStoreStaffField(idx, 'role', e.target.value)}
-                        placeholder="e.g., Staff Nurse / Storekeeper"
+                        onChange={(e) => updateSectionStaffField(idx, 'role', e.target.value)}
+                        placeholder={
+                          isProcedureTrolley
+                            ? 'e.g., Staff Nurse / Trolley Lead'
+                            : 'e.g., Staff Nurse / Storekeeper'
+                        }
                         className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
                       />
                     </td>
@@ -710,9 +798,13 @@ export function InventoryModuleView({
                         type="text"
                         value={st.assignedSections}
                         onChange={(e) =>
-                          updateStoreStaffField(idx, 'assignedSections', e.target.value)
+                          updateSectionStaffField(idx, 'assignedSections', e.target.value)
                         }
-                        placeholder="e.g., Surgical Disposable & Dressing"
+                        placeholder={
+                          isProcedureTrolley
+                            ? 'e.g., All Items (No. 1–42)'
+                            : 'e.g., Surgical Disposable & Dressing'
+                        }
                         className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
                       />
                     </td>
@@ -721,7 +813,7 @@ export function InventoryModuleView({
                         type="text"
                         value={st.checkedDate}
                         onChange={(e) =>
-                          updateStoreStaffField(idx, 'checkedDate', e.target.value)
+                          updateSectionStaffField(idx, 'checkedDate', e.target.value)
                         }
                         placeholder="DD/MM/YYYY"
                         className="w-full px-2 py-1 text-xs font-mono text-center border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
@@ -731,7 +823,7 @@ export function InventoryModuleView({
                       <input
                         type="text"
                         value={st.signature}
-                        onChange={(e) => updateStoreStaffField(idx, 'signature', e.target.value)}
+                        onChange={(e) => updateSectionStaffField(idx, 'signature', e.target.value)}
                         placeholder="Sign / Initials"
                         className="w-full px-2 py-1 text-xs text-center border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
                       />
@@ -739,10 +831,10 @@ export function InventoryModuleView({
                     <td className="p-1.5 text-center">
                       <button
                         type="button"
-                        onClick={() => removeStoreStaffRow(idx)}
-                        disabled={storeStaffAssignments.length <= 1}
+                        onClick={() => removeSectionStaffRow(idx)}
+                        disabled={sectionStaffAssignments.length <= 1}
                         title={
-                          storeStaffAssignments.length <= 1
+                          sectionStaffAssignments.length <= 1
                             ? 'At least 1 assigned staff required'
                             : 'Remove staff member'
                         }
@@ -1084,7 +1176,7 @@ export function InventoryModuleView({
       ) : (
         <div
           className={`no-print bg-white border border-slate-200 rounded-lg ${
-            isTransferBag && viewMode === 'print-preview' ? 'hidden' : ''
+            (isTransferBag || isProcedureTrolley) && viewMode === 'print-preview' ? 'hidden' : ''
           }`}
         >
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
@@ -1185,8 +1277,13 @@ export function InventoryModuleView({
                       {category.isEquipment ? 'Status' : 'Stock / Par'}
                     </th>
                     <th className="py-2.5 px-3">
-                      {category.isEquipment ? 'Next PM Due' : 'Expiry Date & State'}
+                      {category.isEquipment
+                        ? 'Next PM Due'
+                        : isProcedureTrolley
+                          ? 'Expiry Date 1'
+                          : 'Expiry Date & State'}
                     </th>
+                    {isProcedureTrolley && <th className="py-2.5 px-3">Expiry Date 2</th>}
                     <th className="py-2.5 px-3">Last Verified</th>
                     <th className="py-2.5 px-4 text-right">Actions</th>
                   </tr>
@@ -1324,6 +1421,14 @@ export function InventoryModuleView({
                         )}
                       </td>
 
+                      {isProcedureTrolley && (
+                        <td className="py-3 px-3 whitespace-nowrap text-xs">
+                          <div className="font-mono tabular-nums text-slate-900">
+                            {formatShortDate(item.secondExpiryDate || null)}
+                          </div>
+                        </td>
+                      )}
+
                       <td className="py-3 px-3 whitespace-nowrap text-xs text-slate-600">
                         <div className="font-mono tabular-nums">
                           {formatShortDate(item.lastCheckedDate)}
@@ -1383,6 +1488,25 @@ export function InventoryModuleView({
             items={categoryItems}
             meta={transferBagMeta}
             defaultInspector={defaultInspector}
+          />
+        </div>
+      )}
+
+      {/* Official Procedure Trolley Checklist Printable Form */}
+      {isProcedureTrolley && (
+        <div
+          className={
+            viewMode === 'print-preview'
+              ? 'block overflow-x-auto pb-4'
+              : 'hidden print-only-block'
+          }
+        >
+          <ProcedureTrolleyPrintView
+            items={categoryItems}
+            meta={sectionMeta}
+            wardName={wardName}
+            defaultInspector={defaultInspector}
+            layoutMode={trolleyPrintLayout}
           />
         </div>
       )}
@@ -1509,13 +1633,19 @@ export function InventoryModuleView({
               ) : (
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Specific Location / Drawer
+                    {isProcedureTrolley
+                      ? 'Checklist Row No. (e.g., No. 17 or No. 43)'
+                      : 'Specific Location / Drawer'}
                   </label>
                   <input
                     type="text"
                     value={formLocation}
                     onChange={(e) => setFormLocation(e.target.value)}
-                    placeholder="e.g., Front Pocket / Main Compartment"
+                    placeholder={
+                      isProcedureTrolley
+                        ? 'e.g., No. 17'
+                        : 'e.g., Front Pocket / Main Compartment'
+                    }
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                   />
                 </div>
@@ -1626,7 +1756,7 @@ export function InventoryModuleView({
                     )}
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        {isStore ? 'Expiry Date 1' : 'Expiry Date'}
+                        {isStore || isProcedureTrolley ? 'Expiry Date 1' : 'Expiry Date'}
                       </label>
                       <input
                         type="date"
@@ -1635,7 +1765,7 @@ export function InventoryModuleView({
                         className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                       />
                     </div>
-                    {isStore && (
+                    {(isStore || isProcedureTrolley) && (
                       <div>
                         <label className="block text-xs font-medium text-slate-700 mb-1">
                           Expiry Date 2
