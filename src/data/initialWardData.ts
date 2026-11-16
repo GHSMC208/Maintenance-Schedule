@@ -54,8 +54,8 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
     label: 'Stock IV Fluids & Medications',
     shortLabel: 'IV Fluids & Meds',
     description:
-      'Organized lists matching CAD Checklist, High-Alert Meds, Refrigerator Stock, IV Fluids, and Near Expiry — monthly audit assigned to at least 3 ward staff.',
-    supportsUnitSplit: true,
+      'Organized lists matching CAD Checklist, High-Alert Meds, Refrigerator Stock, IV Fluids, and Near Expiry — monthly scheduled staff audit.',
+    supportsUnitSplit: false,
   },
   {
     id: 'transfer-bag',
@@ -211,7 +211,7 @@ export function createInitialWardData(): WardStoreData {
         lastCompletedDate: addDaysIso(today, -32),
         lastInspector: 'RN Sara Al-Mansoor, RN Khalid Hassan, RN Nadia Omar',
         status: 'follow-up',
-        assignedRole: 'Min. 3 Assigned Staff (Charge Nurse + 2 RNs)',
+        assignedRole: 'Assigned Ward Staff',
         notes: 'Covers CAD Checklist, High-Alert Meds, Refrigerator Stock, and IV Fluids. Amiodarone ampoules expiring soon — replacement ordered.',
       },
       {

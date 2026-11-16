@@ -809,7 +809,7 @@ export function createInitialIvMedsAuditMeta(today: string): IvMedsAuditMeta {
         signature: '',
       },
     ],
-    notes: 'Monthly scheduled check assigned to at least 3 ward staff members.',
+    notes: 'Monthly scheduled check assigned to ward staff.',
   };
 }
 

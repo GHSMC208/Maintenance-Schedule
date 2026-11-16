@@ -136,7 +136,7 @@ export function IvMedsPrintView({
       ? (pages.length === 1 ? 5 : 2) +
         pages[pages.length - 1].reduce((acc, c) => acc + 3 + Math.max(1, c.rows.length), 0)
       : 0;
-  const staffRowsCost = 3 + Math.max(3, auditMeta.staffAssignments.length) * 1.5;
+  const staffRowsCost = 3 + Math.max(1, auditMeta.staffAssignments.length) * 1.5;
   const putSignOffOnNewPage = pages.length > 0 && lastPageUnits + staffRowsCost > 27;
 
   const totalPages = pages.length + (putSignOffOnNewPage ? 1 : 0);
@@ -156,7 +156,7 @@ export function IvMedsPrintView({
   const signOffBlock = (
     <div className="mt-3 shrink-0">
       <div className="bg-[#d9d9d9] border border-black border-b-0 px-2.5 py-1 text-[10.5px] font-bold flex items-center justify-between">
-        <span>Monthly Scheduled Audit &mdash; Assigned Staff Sign-Off (Minimum 3 Staff)</span>
+        <span>Monthly Scheduled Audit &mdash; Assigned Staff Sign-Off</span>
         <span className="font-normal text-[9.5px]">
           Assigned: {auditMeta.staffAssignments.length} Staff
         </span>
@@ -306,7 +306,7 @@ export function IvMedsPrintView({
                             Item / Medication Name
                           </th>
                           <th className="border border-black px-1.5 py-1 text-left font-bold w-[19%]">
-                            Unit / Location
+                            Location / Cabinet
                           </th>
                           <th className="border border-black px-1.5 py-1 text-center font-bold w-[12%]">
                             Lot / Batch
@@ -343,7 +343,7 @@ export function IvMedsPrintView({
                                   {item.name}
                                 </td>
                                 <td className="border border-black px-1.5 py-[3px] text-left text-[9px]">
-                                  {item.unit} &middot; {item.locationDetail}
+                                  {item.locationDetail}
                                 </td>
                                 <td className="border border-black px-1.5 py-[3px] text-center font-mono text-[8.5px]">
                                   {item.batchOrSerial}
@@ -402,7 +402,9 @@ export function IvMedsPrintView({
           </div>
 
           <div className="mt-2 pt-1.5 border-t border-slate-300 flex items-center justify-between text-[9.5px] shrink-0">
-            <span>Monthly Scheduled Audit (Minimum 3 Assigned Staff)</span>
+            <span>
+              Monthly Scheduled Audit ({auditMeta.staffAssignments.length} Assigned Staff)
+            </span>
             <span className="tabular-nums">
               Page {totalPages} of {totalPages}
             </span>

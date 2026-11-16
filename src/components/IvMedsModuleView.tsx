@@ -9,7 +9,6 @@ import {
   Plus,
   Printer,
   RefreshCw,
-  Search,
   Trash2,
   Users,
   XCircle,
@@ -29,7 +28,6 @@ import {
   getExpiryStatus,
   getTaskDueState,
   getTodayIso,
-  isItemAttentionNeeded,
 } from '../utils/dateUtils';
 import { IvMedsPrintView } from './IvMedsPrintView';
 
@@ -73,16 +71,12 @@ export function IvMedsModuleView({
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [activeGroupTab, setActiveGroupTab] = useState<'all' | IvMedsGroupId>('all');
   const [printScope, setPrintScope] = useState<'all' | IvMedsGroupId>('all');
-  const [unitFilter, setUnitFilter] = useState<'All' | 'CCU' | 'SD' | 'General Ward'>('All');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'attention'>('all');
-  const [search, setSearch] = useState('');
 
   // Modal state
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [formGroup, setFormGroup] = useState<IvMedsGroupId>('iv-fluids');
   const [formName, setFormName] = useState('');
-  const [formUnit, setFormUnit] = useState<'CCU' | 'SD' | 'General Ward'>('CCU');
   const [formLocation, setFormLocation] = useState('');
   const [formQty, setFormQty] = useState(10);
   const [formPar, setFormPar] = useState(10);
@@ -140,23 +134,16 @@ export function IvMedsModuleView({
       'iv-fluids': [],
       'near-expiry': [],
     };
-    const q = search.trim().toLowerCase();
 
     for (const it of categoryItems) {
       const grp = it.medGroup || inferIvMedsGroup(it);
-      if (unitFilter !== 'All' && it.unit !== unitFilter) continue;
-      if (statusFilter === 'attention' && !isItemAttentionNeeded(it, today)) continue;
-      if (q) {
-        const hay = `${it.name} ${it.locationDetail} ${it.batchOrSerial} ${it.notes}`.toLowerCase();
-        if (!hay.includes(q)) continue;
-      }
       map[grp].push(it);
       if (grp !== 'near-expiry' && isIvMedNearExpiry(it, today)) {
         map['near-expiry'].push(it);
       }
     }
     return map;
-  }, [categoryItems, unitFilter, statusFilter, search, today]);
+  }, [categoryItems, today]);
 
   const assignedStaffReadyCount = auditMeta.staffAssignments.filter(
     (s) => s.staffName.trim() !== ''
@@ -169,7 +156,6 @@ export function IvMedsModuleView({
     setEditingItem(null);
     setFormGroup(grp);
     setFormName('');
-    setFormUnit('CCU');
     setFormLocation(
       grp === 'cad'
         ? 'CAD Double-Lock Cabinet'
@@ -194,7 +180,6 @@ export function IvMedsModuleView({
     setEditingItem(item);
     setFormGroup(item.medGroup || inferIvMedsGroup(item));
     setFormName(item.name);
-    setFormUnit(item.unit);
     setFormLocation(item.locationDetail);
     setFormQty(item.quantity);
     setFormPar(item.parLevel);
@@ -213,7 +198,7 @@ export function IvMedsModuleView({
       categoryId: category.id,
       medGroup: formGroup,
       name: formName.trim(),
-      unit: formUnit,
+      unit: editingItem ? editingItem.unit : 'CCU',
       locationDetail: formLocation.trim() || 'Medication Room',
       quantity: Math.max(0, Number(formQty) || 0),
       parLevel: Math.max(0, Number(formPar) || 0),
@@ -260,7 +245,7 @@ export function IvMedsModuleView({
   };
 
   const removeStaffRow = (idx: number) => {
-    if (auditMeta.staffAssignments.length <= 3) return;
+    if (auditMeta.staffAssignments.length <= 1) return;
     onUpdateAuditMeta({
       staffAssignments: auditMeta.staffAssignments.filter((_, i) => i !== idx),
     });
@@ -277,7 +262,7 @@ export function IvMedsModuleView({
       monthlyTask.id,
       inspectorLabel,
       'completed',
-      `Monthly 5-list audit verified by ${Math.max(3, names.length)} assigned staff (${auditMeta.monthYear}).`
+      `Monthly 5-list audit verified by ${Math.max(1, names.length)} assigned staff (${auditMeta.monthYear}).`
     );
   };
 
@@ -420,7 +405,7 @@ export function IvMedsModuleView({
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-slate-900">
-                  Monthly Scheduled Staff Assignment (Minimum 3 Staff Required)
+                  Monthly Scheduled Staff Assignment
                 </h3>
                 <p className="text-xs text-slate-500">
                   Assigned team ({assignedStaffReadyCount} named /{' '}
@@ -445,10 +430,10 @@ export function IvMedsModuleView({
                 <button
                   type="button"
                   onClick={handleCompleteMonthlyAudit}
-                  disabled={assignedStaffReadyCount < 3}
+                  disabled={assignedStaffReadyCount < 1}
                   title={
-                    assignedStaffReadyCount < 3
-                      ? 'Assign at least 3 staff names before completing monthly audit'
+                    assignedStaffReadyCount < 1
+                      ? 'Assign at least 1 staff name before completing monthly audit'
                       : 'Mark monthly audit completed and advance next due date by 1 month'
                   }
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-45 disabled:pointer-events-none rounded-md transition-colors cursor-pointer"
@@ -575,10 +560,10 @@ export function IvMedsModuleView({
                       <button
                         type="button"
                         onClick={() => removeStaffRow(idx)}
-                        disabled={auditMeta.staffAssignments.length <= 3}
+                        disabled={auditMeta.staffAssignments.length <= 1}
                         title={
-                          auditMeta.staffAssignments.length <= 3
-                            ? 'Minimum 3 assigned staff required'
+                          auditMeta.staffAssignments.length <= 1
+                            ? 'At least 1 assigned staff required'
                             : 'Remove staff member'
                         }
                         className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
@@ -627,70 +612,6 @@ export function IvMedsModuleView({
                 ))}
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                {(['All', 'CCU', 'SD', 'General Ward'] as const).map((unit) => (
-                  <button
-                    key={unit}
-                    type="button"
-                    onClick={() => setUnitFilter(unit)}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                      unitFilter === unit
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {unit === 'All' ? 'All Units' : unit}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                    statusFilter === 'all'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Show All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('attention')}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                    statusFilter === 'attention'
-                      ? 'bg-white text-rose-700 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Alerts Only
-                </button>
-              </div>
-
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search medication or lot..."
-                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md w-48 focus:outline-none focus:ring-2 focus:ring-teal-700"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => openAdd()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Item
-              </button>
-            </div>
           </div>
 
           {/* Grouped List Cards */}
@@ -727,7 +648,7 @@ export function IvMedsModuleView({
 
                 {listItems.length === 0 ? (
                   <div className="py-8 text-center text-xs text-slate-500">
-                    No items match the current filter in {group.label}.
+                    No items in {group.label}.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -736,7 +657,6 @@ export function IvMedsModuleView({
                         <tr className="border-b border-slate-200 bg-slate-50/50 text-[11px] font-medium text-slate-500">
                           <th className="py-2 px-3 w-10 text-center">#</th>
                           <th className="py-2 px-3">Item &amp; Location</th>
-                          <th className="py-2 px-3">Unit</th>
                           <th className="py-2 px-3">Lot / Batch</th>
                           <th className="py-2 px-3">Stock / Par</th>
                           <th className="py-2 px-3">Expiry Date &amp; State</th>
@@ -780,9 +700,6 @@ export function IvMedsModuleView({
                                     </>
                                   )}
                                 </div>
-                              </td>
-                              <td className="py-2.5 px-3 whitespace-nowrap text-xs font-medium text-slate-700">
-                                {item.unit}
                               </td>
                               <td className="py-2.5 px-3 whitespace-nowrap font-mono text-xs text-slate-600">
                                 {item.batchOrSerial}
@@ -918,37 +835,21 @@ export function IvMedsModuleView({
               </h3>
             </div>
             <form onSubmit={handleSaveItem} className="p-5 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Assigned List
-                  </label>
-                  <select
-                    value={formGroup}
-                    onChange={(e) => setFormGroup(e.target.value as IvMedsGroupId)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                  >
-                    {IV_MEDS_GROUPS.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Ward Unit</label>
-                  <select
-                    value={formUnit}
-                    onChange={(e) =>
-                      setFormUnit(e.target.value as 'CCU' | 'SD' | 'General Ward')
-                    }
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                  >
-                    <option value="CCU">CCU</option>
-                    <option value="SD">SD</option>
-                    <option value="General Ward">General Ward</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Assigned List
+                </label>
+                <select
+                  value={formGroup}
+                  onChange={(e) => setFormGroup(e.target.value as IvMedsGroupId)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                >
+                  {IV_MEDS_GROUPS.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

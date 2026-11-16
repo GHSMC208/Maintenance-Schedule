@@ -81,17 +81,10 @@ function hydrateIvMedsAuditMeta(
 ): IvMedsAuditMeta {
   const base = createInitialIvMedsAuditMeta(today);
   if (!raw) return base;
-  const staff = Array.isArray(raw.staffAssignments) ? [...raw.staffAssignments] : [];
-  while (staff.length < 3) {
-    staff.push(base.staffAssignments[staff.length] || {
-      id: `ivm-stf-${staff.length + 1}`,
-      staffName: '',
-      role: 'Ward Nurse',
-      assignedLists: '',
-      checkedDate: '',
-      signature: '',
-    });
-  }
+  const staff =
+    Array.isArray(raw.staffAssignments) && raw.staffAssignments.length > 0
+      ? [...raw.staffAssignments]
+      : [...base.staffAssignments];
   const monthParts = (raw.monthYear || '').trim().split(/\s+/);
   const derivedYear =
     monthParts.length > 1 && /^\d{4}$/.test(monthParts[monthParts.length - 1])
