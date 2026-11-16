@@ -291,6 +291,7 @@ export function createInitialTransferBagMeta(today: string): TransferBagChecklis
     ? ''
     : d.toLocaleDateString('en-US', { month: 'long' });
   return {
+    wardNumber: '',
     month: monthName,
     year: year || '',
     checkedBy: '',

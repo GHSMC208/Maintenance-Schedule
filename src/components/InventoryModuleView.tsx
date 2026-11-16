@@ -234,7 +234,19 @@ export function InventoryModuleView({
 
         {isTransferBag && (
           <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 flex-1 min-w-[280px]">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 flex-1 min-w-[320px]">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Ward Number
+                </label>
+                <input
+                  type="text"
+                  value={transferBagMeta?.wardNumber || ''}
+                  onChange={(e) => onUpdateTransferBagMeta?.({ wardNumber: e.target.value })}
+                  placeholder="e.g., 208 / CCU"
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
                 <input

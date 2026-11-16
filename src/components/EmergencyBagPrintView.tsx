@@ -29,6 +29,13 @@ export function EmergencyBagPrintView({
     { month: 'long' }
   );
 
+  const rawWard = meta?.wardNumber?.trim() || '';
+  const bannerTitle = !rawWard
+    ? 'Emergency Bag Checklist \u2013 Ward'
+    : rawWard.toLowerCase().startsWith('ward')
+      ? `Emergency Bag Checklist \u2013 ${rawWard}`
+      : `Emergency Bag Checklist \u2013 Ward ${rawWard}`;
+
   const displayMonth = meta?.month?.trim() || defaultMonth;
   const displayYear = meta?.year?.trim() || y;
   const displayCheckedBy = meta?.checkedBy?.trim() || defaultInspector;
@@ -78,7 +85,7 @@ export function EmergencyBagPrintView({
               {/* Slate-Gray Banner + Month/Year + Checked By/Date Block */}
               <div className="w-full">
                 <div className="bg-[#a8b1bf] text-center font-bold text-[17.5px] py-[4px] leading-tight text-black">
-                  Emergency Bag Checklist &ndash; Ward
+                  {bannerTitle}
                 </div>
 
                 <div className="bg-[#d6d9e0] grid grid-cols-[68%_32%] px-2 py-[2.5px] text-[12px] text-black">

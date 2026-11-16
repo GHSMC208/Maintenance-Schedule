@@ -296,6 +296,7 @@ export interface PharmacyFormsState {
 }
 
 export interface TransferBagChecklistMeta {
+  wardNumber?: string;
   month: string;
   year: string;
   checkedBy: string;
