@@ -405,29 +405,40 @@ export function MonthlyStorePrintPage({ form }: { form: MonthlyStoreChecklistFor
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((row) => (
-                    <tr key={row.id}>
-                      <td className="border border-black px-2 py-1 text-center text-[10px]">
-                        {row.stockNo}
-                      </td>
-                      <td className="border border-black px-2 py-1 text-left text-[10px]">
-                        {row.description}
-                      </td>
-                      <td className="border border-black px-2 py-1 text-center text-[10px]">
-                        {row.qtyAvailable}
-                      </td>
-                      <td
-                        className={`border border-black px-2 py-1 text-center text-[10px] ${expiryHl(row.expiryDate1)}`}
-                      >
-                        {row.expiryDate1}
-                      </td>
-                      <td
-                        className={`border border-black px-2 py-1 text-center text-[10px] ${expiryHl(row.expiryDate2)}`}
-                      >
-                        {row.expiryDate2}
-                      </td>
-                    </tr>
-                  ))}
+                  {pageRows.map((row) =>
+                    row.isCategoryHeader ? (
+                      <tr key={row.id} className="h-[26px]">
+                        <td
+                          colSpan={5}
+                          className="border border-black bg-black text-white px-2 py-0.5 text-center font-bold text-[10.5px] tracking-wide"
+                        >
+                          {row.description}
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={row.id} className="h-[26px]">
+                        <td className="border border-black px-1.5 py-0.5 text-center text-[9.5px] leading-tight">
+                          {row.stockNo}
+                        </td>
+                        <td className="border border-black px-2 py-0.5 text-left text-[9.5px] leading-tight">
+                          {row.description}
+                        </td>
+                        <td className="border border-black px-2 py-1 text-center text-[10px]">
+                          {row.qtyAvailable}
+                        </td>
+                        <td
+                          className={`border border-black px-2 py-1 text-center text-[10px] ${expiryHl(row.expiryDate1)}`}
+                        >
+                          {row.expiryDate1}
+                        </td>
+                        <td
+                          className={`border border-black px-2 py-1 text-center text-[10px] ${expiryHl(row.expiryDate2)}`}
+                        >
+                          {row.expiryDate2}
+                        </td>
+                      </tr>
+                    )
+                  )}
 
                   {/* Attached Right-Aligned Sign-Off Rows on Final Page */}
                   {isLastPage && (

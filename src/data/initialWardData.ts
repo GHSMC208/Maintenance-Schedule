@@ -7,6 +7,7 @@ import {
   createInitialIvMedsItems,
 } from './ivMedsSeed';
 import { createInitialPharmacyForms } from './pharmacyFormsSeed';
+import { createInitialStoreItems } from './storeItemsSeed';
 import {
   createInitialTransferBagItems,
   createInitialTransferBagMeta,
@@ -25,8 +26,9 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
     id: 'store',
     label: 'Store Items',
     shortLabel: 'Store Items',
-    description: 'Central ward supply room consumables, par levels, lot numbers, and expiry dates.',
-    supportsUnitSplit: true,
+    description:
+      'Standardized hospital Store Checklist across 8 store sections — Stock No., Item description, Quantity available, Expiry Date 1 & 2.',
+    supportsUnitSplit: false,
   },
   {
     id: 'prep-room',
@@ -333,67 +335,8 @@ export function createInitialWardData(): WardStoreData {
         notes: 'Thermal paper stocked; lead wires intact.',
       },
 
-      // Store Items
-      {
-        id: 'st-01',
-        categoryId: 'store',
-        name: 'Sterile Gauze Swabs 10x10cm (Pack of 5)',
-        unit: 'General Ward',
-        locationDetail: 'Store Rack A-2',
-        quantity: 48,
-        parLevel: 40,
-        unitOfMeasure: 'packs',
-        batchOrSerial: 'LOT-GZ-2611',
-        expiryDate: addDaysIso(today, 320),
-        lastCheckedDate: addDaysIso(today, -6),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'FEFO rotated.',
-      },
-      {
-        id: 'st-02',
-        categoryId: 'store',
-        name: 'IV Cannula 18G & 20G Safety Catheters',
-        unit: 'General Ward',
-        locationDetail: 'Store Rack B-1',
-        quantity: 25,
-        parLevel: 50,
-        unitOfMeasure: 'pcs',
-        batchOrSerial: 'LOT-IVC-904',
-        expiryDate: addDaysIso(today, 22),
-        lastCheckedDate: addDaysIso(today, -6),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Below par level and expiring within 30 days — reorder placed.',
-      },
-      {
-        id: 'st-03',
-        categoryId: 'store',
-        name: 'Foley Silicone Catheter 16Fr (Closed System)',
-        unit: 'General Ward',
-        locationDetail: 'Store Rack C-4',
-        quantity: 14,
-        parLevel: 12,
-        unitOfMeasure: 'kits',
-        batchOrSerial: 'LOT-FC-1182',
-        expiryDate: addDaysIso(today, 210),
-        lastCheckedDate: addDaysIso(today, -6),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Sealed sterile trays.',
-      },
-      {
-        id: 'st-04',
-        categoryId: 'store',
-        name: 'Sterile Surgical Gloves Size 7.5 (Box/50)',
-        unit: 'General Ward',
-        locationDetail: 'Store Rack D-1',
-        quantity: 8,
-        parLevel: 6,
-        unitOfMeasure: 'boxes',
-        batchOrSerial: 'LOT-GLV-750',
-        expiryDate: addDaysIso(today, 410),
-        lastCheckedDate: addDaysIso(today, -6),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Powder-free nitrile.',
-      },
+      // Store Items (Official Store Checklist Catalog)
+      ...createInitialStoreItems(today),
 
       // Preparation Room (CCU & SD)
       {

@@ -10,6 +10,7 @@ import {
   createInitialIvMedsItems,
 } from '../data/ivMedsSeed';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
+import { createInitialStoreItems } from '../data/storeItemsSeed';
 import {
   createInitialTransferBagItems,
   createInitialTransferBagMeta,
@@ -54,6 +55,22 @@ function migrateLegacyTransferBagInventory(inventory: InventoryItem[]): Inventor
 
   const nonTb = inventory.filter((it) => it.categoryId !== 'transfer-bag');
   return [...nonTb, ...createInitialTransferBagItems(getTodayIso())];
+}
+
+function migrateLegacyStoreInventory(
+  inventory: InventoryItem[],
+  today: string
+): InventoryItem[] {
+  const storeItems = inventory.filter((it) => it.categoryId === 'store');
+  const isLegacyFour =
+    storeItems.length === 4 &&
+    storeItems.every((it) => ['st-01', 'st-02', 'st-03', 'st-04'].includes(it.id)) &&
+    storeItems.some((it) => it.name.includes('Sterile Gauze Swabs 10x10cm'));
+
+  if (!isLegacyFour) return inventory;
+
+  const nonStore = inventory.filter((it) => it.categoryId !== 'store');
+  return [...nonStore, ...createInitialStoreItems(today)];
 }
 
 function migrateLegacyIvMedsInventory(
@@ -120,6 +137,9 @@ function hydrateSectionMeta(
         wardNumber: val.wardNumber ?? def.wardNumber,
         month: val.month ?? def.month,
         year: val.year ?? def.year,
+        staffName: val.staffName,
+        signature: val.signature,
+        date: val.date,
       };
     }
   }
@@ -160,7 +180,10 @@ function loadInitialStore(): WardStoreData {
         const today = getTodayIso();
         const hydratedForms = syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts);
         const migratedInventory = migrateLegacyIvMedsInventory(
-          migrateLegacyTransferBagInventory(parsed.inventory),
+          migrateLegacyStoreInventory(
+            migrateLegacyTransferBagInventory(parsed.inventory),
+            today
+          ),
           hydratedForms,
           today,
           parsed.defaultInspector || initial.defaultInspector
@@ -848,7 +871,10 @@ export function useWardStore() {
     const hydratedForms = syncNearExpiryInPharmacyForms(rawForms, nextCarts);
     const nextInventory = Array.isArray(imported.inventory)
       ? migrateLegacyIvMedsInventory(
-          migrateLegacyTransferBagInventory(imported.inventory),
+          migrateLegacyStoreInventory(
+            migrateLegacyTransferBagInventory(imported.inventory),
+            today
+          ),
           hydratedForms,
           today,
           imported.defaultInspector || initial.defaultInspector

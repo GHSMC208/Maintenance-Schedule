@@ -329,6 +329,7 @@ export default function App() {
                 key={activeCategory.id}
                 category={activeCategory}
                 items={data.inventory}
+                wardName={data.wardName}
                 defaultInspector={data.defaultInspector}
                 transferBagMeta={data.transferBagMeta}
                 onUpdateTransferBagMeta={updateTransferBagMeta}

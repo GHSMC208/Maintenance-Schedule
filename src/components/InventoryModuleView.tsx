@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Edit3,
   Eye,
   FileEdit,
@@ -26,11 +28,14 @@ import {
   getTodayIso,
   isItemAttentionNeeded,
 } from '../utils/dateUtils';
+import { STORE_SECTIONS } from '../data/storeItemsSeed';
 import { EmergencyBagPrintView } from './EmergencyBagPrintView';
+import { StoreChecklistPrintView } from './StoreChecklistPrintView';
 
 interface InventoryModuleViewProps {
   category: CategoryMeta;
   items: InventoryItem[];
+  wardName?: string;
   defaultInspector: string;
   transferBagMeta?: TransferBagChecklistMeta;
   onUpdateTransferBagMeta?: (patch: Partial<TransferBagChecklistMeta>) => void;
@@ -45,6 +50,7 @@ interface InventoryModuleViewProps {
 export function InventoryModuleView({
   category,
   items,
+  wardName = '',
   defaultInspector,
   transferBagMeta,
   onUpdateTransferBagMeta,
@@ -57,8 +63,11 @@ export function InventoryModuleView({
 }: InventoryModuleViewProps) {
   const today = getTodayIso();
   const isTransferBag = category.id === 'transfer-bag';
+  const isStore = category.id === 'store';
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [unitFilter, setUnitFilter] = useState<'All' | 'CCU' | 'SD' | 'General Ward'>('All');
+  const [storeSectionFilter, setStoreSectionFilter] = useState<string>('All');
+  const [collapsedStoreSections, setCollapsedStoreSections] = useState<Record<string, boolean>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'attention'>('all');
   const [search, setSearch] = useState('');
 
@@ -73,7 +82,9 @@ export function InventoryModuleView({
   const [formPar, setFormPar] = useState(1);
   const [formUom, setFormUom] = useState(category.isEquipment ? 'unit' : 'pcs');
   const [formBatch, setFormBatch] = useState('');
+  const [formOtherCode, setFormOtherCode] = useState('');
   const [formExpiry, setFormExpiry] = useState('');
+  const [formSecondExpiry, setFormSecondExpiry] = useState('');
   const [formEqStatus, setFormEqStatus] = useState<EquipmentStatus>('Operational');
   const [formNextPm, setFormNextPm] = useState('');
   const [formNotes, setFormNotes] = useState('');
@@ -108,29 +119,99 @@ export function InventoryModuleView({
     };
   }, [categoryItems, category.isEquipment, today]);
 
+  const storeSections = useMemo(() => {
+    if (!isStore) return [];
+    const counts = new Map<string, number>();
+    for (const sec of STORE_SECTIONS) counts.set(sec, 0);
+    for (const it of categoryItems) {
+      const key = it.locationDetail || 'SURGICAL DISPOSABLE';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => ({ name, count }));
+  }, [categoryItems, isStore]);
+
   const filteredItems = useMemo(() => {
     return categoryItems.filter((it) => {
-      if (unitFilter !== 'All' && it.unit !== unitFilter) return false;
-      if (statusFilter === 'attention' && !isItemAttentionNeeded(it, today)) return false;
+      if (category.supportsUnitSplit && unitFilter !== 'All' && it.unit !== unitFilter) return false;
+      if (isStore && storeSectionFilter !== 'All' && it.locationDetail !== storeSectionFilter) {
+        return false;
+      }
+      if (!isStore && statusFilter === 'attention' && !isItemAttentionNeeded(it, today)) {
+        return false;
+      }
       if (search.trim()) {
         const q = search.toLowerCase();
-        const hay = `${it.name} ${it.locationDetail} ${it.batchOrSerial} ${it.notes}`.toLowerCase();
+        const hay = `${it.name} ${it.locationDetail} ${it.batchOrSerial} ${it.otherCode || ''} ${it.notes}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [categoryItems, unitFilter, statusFilter, search, today]);
+  }, [
+    categoryItems,
+    category.supportsUnitSplit,
+    unitFilter,
+    isStore,
+    storeSectionFilter,
+    statusFilter,
+    search,
+    today,
+  ]);
 
-  const openAdd = () => {
+  const printableStoreItems = useMemo(() => {
+    if (!isStore) return categoryItems;
+    if (storeSectionFilter === 'All') return categoryItems;
+    return categoryItems.filter((it) => it.locationDetail === storeSectionFilter);
+  }, [categoryItems, isStore, storeSectionFilter]);
+
+  const groupedStoreSections = useMemo(() => {
+    if (!isStore) return [];
+    const map = new Map<string, InventoryItem[]>();
+    for (const sec of STORE_SECTIONS) map.set(sec, []);
+    for (const it of filteredItems) {
+      const key = it.locationDetail?.trim() || STORE_SECTIONS[0];
+      const bucket = map.get(key);
+      if (bucket) bucket.push(it);
+      else map.set(key, [it]);
+    }
+    return Array.from(map.entries())
+      .filter(([, list]) => list.length > 0)
+      .map(([name, list]) => ({ name, items: list }));
+  }, [filteredItems, isStore]);
+
+  const toggleStoreSection = (secName: string) => {
+    setCollapsedStoreSections((prev) => ({
+      ...prev,
+      [secName]: !prev[secName],
+    }));
+  };
+
+  const setAllStoreSectionsCollapsed = (collapsed: boolean) => {
+    const next: Record<string, boolean> = {};
+    for (const sec of groupedStoreSections) {
+      next[sec.name] = collapsed;
+    }
+    setCollapsedStoreSections(next);
+  };
+
+  const openAdd = (presetStoreSection?: string) => {
     setEditingItem(null);
     setFormName('');
-    setFormUnit('CCU');
-    setFormLocation('');
-    setFormQty(category.isEquipment ? 1 : 10);
-    setFormPar(category.isEquipment ? 1 : 10);
+    setFormUnit(category.supportsUnitSplit ? 'CCU' : 'General Ward');
+    setFormLocation(
+      isStore
+        ? presetStoreSection ||
+            (storeSectionFilter !== 'All' ? storeSectionFilter : STORE_SECTIONS[0])
+        : ''
+    );
+    setFormQty(category.isEquipment ? 1 : isStore ? 0 : 10);
+    setFormPar(category.isEquipment ? 1 : isStore ? 0 : 10);
     setFormUom(category.isEquipment ? 'unit' : 'pcs');
     setFormBatch('');
+    setFormOtherCode('');
     setFormExpiry('');
+    setFormSecondExpiry('');
     setFormEqStatus('Operational');
     setFormNextPm('');
     setFormNotes('');
@@ -146,7 +227,9 @@ export function InventoryModuleView({
     setFormPar(item.parLevel);
     setFormUom(item.unitOfMeasure);
     setFormBatch(item.batchOrSerial);
+    setFormOtherCode(item.otherCode || '');
     setFormExpiry(item.expiryDate || '');
+    setFormSecondExpiry(item.secondExpiryDate || '');
     setFormEqStatus(item.equipmentStatus || 'Operational');
     setFormNextPm(item.nextPmDate || '');
     setFormNotes(item.notes);
@@ -160,13 +243,19 @@ export function InventoryModuleView({
     const payload: Omit<InventoryItem, 'id'> = {
       categoryId: category.id,
       name: formName.trim(),
-      unit: formUnit,
+      unit: category.supportsUnitSplit ? formUnit : 'General Ward',
       locationDetail: formLocation.trim() || category.shortLabel,
       quantity: Math.max(0, Number(formQty) || 0),
       parLevel: Math.max(0, Number(formPar) || 0),
       unitOfMeasure: formUom.trim() || 'pcs',
       batchOrSerial: formBatch.trim() || '—',
+      otherCode: isStore ? formOtherCode.trim() || undefined : editingItem?.otherCode,
       expiryDate: formExpiry ? formExpiry : null,
+      secondExpiryDate: isStore
+        ? formSecondExpiry
+          ? formSecondExpiry
+          : null
+        : editingItem?.secondExpiryDate,
       equipmentStatus: category.isEquipment ? formEqStatus : undefined,
       nextPmDate: category.isEquipment ? formNextPm || null : undefined,
       lastCheckedDate: today,
@@ -237,7 +326,7 @@ export function InventoryModuleView({
           </div>
         </div>
 
-        {!isTransferBag && onUpdateSectionMeta && (
+        {!isTransferBag && !isStore && onUpdateSectionMeta && (
           <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
             <div>
               <label className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -270,6 +359,117 @@ export function InventoryModuleView({
                 placeholder="2026"
                 className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
               />
+            </div>
+          </div>
+        )}
+
+        {isStore && onUpdateSectionMeta && (
+          <div className="pt-4 border-t border-slate-200 flex flex-wrap items-end justify-between gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 flex-1 min-w-[340px]">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Ward Number
+                </label>
+                <input
+                  type="text"
+                  value={sectionMeta?.wardNumber || ''}
+                  onChange={(e) => onUpdateSectionMeta({ wardNumber: e.target.value })}
+                  placeholder={wardName || 'e.g., 208 / CCU'}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
+                <input
+                  type="text"
+                  value={sectionMeta?.month || ''}
+                  onChange={(e) => onUpdateSectionMeta({ month: e.target.value })}
+                  placeholder="e.g., November"
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
+                <input
+                  type="text"
+                  value={sectionMeta?.year || ''}
+                  onChange={(e) => onUpdateSectionMeta({ year: e.target.value })}
+                  placeholder="2026"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Staff Name
+                </label>
+                <input
+                  type="text"
+                  value={sectionMeta?.staffName ?? ''}
+                  onChange={(e) => onUpdateSectionMeta({ staffName: e.target.value })}
+                  placeholder={defaultInspector}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Signature
+                </label>
+                <input
+                  type="text"
+                  value={sectionMeta?.signature || ''}
+                  onChange={(e) => onUpdateSectionMeta({ signature: e.target.value })}
+                  placeholder="Sign / Initials"
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Date</label>
+                <input
+                  type="text"
+                  value={sectionMeta?.date || ''}
+                  onChange={(e) => onUpdateSectionMeta({ date: e.target.value })}
+                  placeholder="DD/MM/YYYY"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('editor')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    viewMode === 'editor'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileEdit className="w-3.5 h-3.5" />
+                  Edit List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('print-preview')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    viewMode === 'print-preview'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Print Preview
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Print Checklist (A4)
+              </button>
             </div>
           </div>
         )}
@@ -375,126 +575,447 @@ export function InventoryModuleView({
       </div>
 
       {/* Filter & Inventory Grid */}
-      <div
-        className={`no-print bg-white border border-slate-200 rounded-lg ${
-          isTransferBag && viewMode === 'print-preview' ? 'hidden' : ''
-        }`}
-      >
-        <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {category.supportsUnitSplit && (
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                {(['All', 'CCU', 'SD', 'General Ward'] as const).map((unit) => (
-                  <button
-                    key={unit}
-                    type="button"
-                    onClick={() => setUnitFilter(unit)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      unitFilter === unit
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {unit === 'All' ? 'All Units' : unit}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+      {isStore ? (
+        <div
+          className={`no-print space-y-4 ${
+            viewMode === 'print-preview' ? 'hidden' : ''
+          }`}
+        >
+          {/* Categorized Store Filter Bar */}
+          <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
               <button
                 type="button"
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  statusFilter === 'all'
+                onClick={() => setStoreSectionFilter('All')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                  storeSectionFilter === 'All'
                     ? 'bg-white text-slate-900 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Show All
+                All Categories ({categoryItems.length})
               </button>
+              {storeSections.map((sec) => (
+                <button
+                  key={sec.name}
+                  type="button"
+                  onClick={() => setStoreSectionFilter(sec.name)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    storeSectionFilter === sec.name
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {sec.name} ({sec.count})
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {storeSectionFilter === 'All' && groupedStoreSections.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAllStoreSectionsCollapsed(false)}
+                      className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                    >
+                      Expand All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllStoreSectionsCollapsed(true)}
+                      className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                    >
+                      Collapse All
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search description or item code..."
+                    className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openAdd()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Item
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Categorized Store Section Cards */}
+          {groupedStoreSections.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
+              <h3 className="text-sm font-semibold text-slate-900">
+                No items match current filter
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Add an item to this category or clear your search/status filters.
+              </p>
               <button
                 type="button"
-                onClick={() => setStatusFilter('attention')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  statusFilter === 'attention'
-                    ? 'bg-white text-rose-700 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                onClick={() => openAdd()}
+                className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
               >
-                Alerts Only
+                Add Entry
+              </button>
+            </div>
+          ) : (
+            groupedStoreSections.map((section) => {
+              const isCollapsed =
+                storeSectionFilter === 'All' &&
+                !search.trim() &&
+                Boolean(collapsedStoreSections[section.name]);
+
+              return (
+                <div
+                  key={section.name}
+                  className="bg-white border border-slate-200 rounded-lg overflow-hidden"
+                >
+                  <div className="px-4 py-2.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleStoreSection(section.name)}
+                      className="flex items-center gap-2 text-left cursor-pointer"
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" />
+                      )}
+                      <h3 className="text-sm font-semibold tracking-wide">
+                        {section.name}
+                      </h3>
+                      <span className="font-mono text-xs text-slate-300 tabular-nums">
+                        ({section.items.length})
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openAdd(section.name)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-100 bg-teal-800/80 hover:bg-teal-700 rounded transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add to {section.name}
+                    </button>
+                  </div>
+
+                  {!isCollapsed && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-medium text-slate-500">
+                            <th className="py-2.5 px-3 w-12 text-center">#</th>
+                            <th className="py-2.5 px-3">Stock No.</th>
+                            <th className="py-2.5 px-3">Item description</th>
+                            <th className="py-2.5 px-3">Quantity available</th>
+                            <th className="py-2.5 px-3">Expiry Date 1</th>
+                            <th className="py-2.5 px-3">Expiry Date 2</th>
+                            <th className="py-2.5 px-3">Last Verified</th>
+                            <th className="py-2.5 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 text-sm">
+                          {section.items.map((item, idx) => {
+                            const exp = getExpiryStatus(item.expiryDate, today);
+                            const exp2 = getExpiryStatus(item.secondExpiryDate || null, today);
+                            const isLowStock = item.quantity < item.parLevel;
+                            return (
+                              <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-2.5 px-3 text-center font-mono text-xs text-slate-400">
+                                  {idx + 1}
+                                </td>
+
+                                <td className="py-2.5 px-3 whitespace-nowrap font-mono text-xs text-slate-700">
+                                  <div>{item.batchOrSerial}</div>
+                                  {item.otherCode && (
+                                    <div className="text-[11px] text-slate-400">
+                                      Other: {item.otherCode}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-3 max-w-md">
+                                  <div className="font-medium text-slate-900">{item.name}</div>
+                                  {item.notes && (
+                                    <div
+                                      className="mt-0.5 text-xs text-slate-500 truncate max-w-sm"
+                                      title={item.notes}
+                                    >
+                                      {item.notes}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      aria-label="Decrease quantity"
+                                      onClick={() =>
+                                        onUpdateItem(item.id, {
+                                          quantity: Math.max(0, item.quantity - 1),
+                                        })
+                                      }
+                                      className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </button>
+                                    <span
+                                      className={`font-mono tabular-nums text-xs font-semibold min-w-[68px] text-center ${
+                                        isLowStock ? 'text-amber-700' : 'text-slate-900'
+                                      }`}
+                                    >
+                                      {item.quantity} / {item.parLevel} {item.unitOfMeasure}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      aria-label="Increase quantity"
+                                      onClick={() =>
+                                        onUpdateItem(item.id, { quantity: item.quantity + 1 })
+                                      }
+                                      className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </td>
+
+                                <td className="py-2.5 px-3 whitespace-nowrap text-xs">
+                                  <div className="font-mono tabular-nums text-slate-900">
+                                    {formatShortDate(item.expiryDate)}
+                                  </div>
+                                  <div
+                                    className={`text-[11px] font-medium inline-flex items-center gap-1 ${
+                                      exp.state === 'expired'
+                                        ? 'text-rose-700'
+                                        : exp.state === 'expiring-soon'
+                                          ? 'text-amber-700'
+                                          : exp.state === 'valid'
+                                            ? 'text-emerald-700'
+                                            : 'text-slate-500'
+                                    }`}
+                                  >
+                                    {exp.state === 'expired' && <XCircle className="w-3 h-3" />}
+                                    {exp.state === 'expiring-soon' && (
+                                      <AlertTriangle className="w-3 h-3" />
+                                    )}
+                                    {exp.state === 'valid' && <CheckCircle2 className="w-3 h-3" />}
+                                    <span className="tabular-nums">{exp.label}</span>
+                                  </div>
+                                </td>
+
+                                <td className="py-2.5 px-3 whitespace-nowrap text-xs">
+                                  <div className="font-mono tabular-nums text-slate-900">
+                                    {formatShortDate(item.secondExpiryDate || null)}
+                                  </div>
+                                  {item.secondExpiryDate && (
+                                    <div
+                                      className={`text-[11px] font-medium inline-flex items-center gap-1 ${
+                                        exp2.state === 'expired'
+                                          ? 'text-rose-700'
+                                          : exp2.state === 'expiring-soon'
+                                            ? 'text-amber-700'
+                                            : exp2.state === 'valid'
+                                              ? 'text-emerald-700'
+                                              : 'text-slate-500'
+                                      }`}
+                                    >
+                                      {exp2.state === 'expired' && <XCircle className="w-3 h-3" />}
+                                      {exp2.state === 'expiring-soon' && (
+                                        <AlertTriangle className="w-3 h-3" />
+                                      )}
+                                      {exp2.state === 'valid' && (
+                                        <CheckCircle2 className="w-3 h-3" />
+                                      )}
+                                      <span className="tabular-nums">{exp2.label}</span>
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-3 whitespace-nowrap text-xs text-slate-600">
+                                  <div className="font-mono tabular-nums">
+                                    {formatShortDate(item.lastCheckedDate)}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 truncate max-w-[130px]">
+                                    {item.lastCheckedBy}
+                                  </div>
+                                </td>
+
+                                <td className="py-2.5 px-4 whitespace-nowrap text-right">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => onVerifyItem(item.id, defaultInspector)}
+                                      className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                                    >
+                                      Verify
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEdit(item)}
+                                      title="Edit item"
+                                      className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => onDeleteItem(item.id)}
+                                      title="Delete item"
+                                      className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <div
+          className={`no-print bg-white border border-slate-200 rounded-lg ${
+            isTransferBag && viewMode === 'print-preview' ? 'hidden' : ''
+          }`}
+        >
+          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {category.supportsUnitSplit && (
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                  {(['All', 'CCU', 'SD', 'General Ward'] as const).map((unit) => (
+                    <button
+                      key={unit}
+                      type="button"
+                      onClick={() => setUnitFilter(unit)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        unitFilter === unit
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {unit === 'All' ? 'All Units' : unit}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    statusFilter === 'all'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Show All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('attention')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    statusFilter === 'attention'
+                      ? 'bg-white text-rose-700 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Alerts Only
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search item, lot or serial..."
+                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md w-56 focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => openAdd()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add {category.isEquipment ? 'Equipment' : 'Item'}
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search item, lot or serial..."
-                className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md w-56 focus:outline-none focus:ring-2 focus:ring-teal-700"
-              />
+          {filteredItems.length === 0 ? (
+            <div className="p-12 text-center">
+              <h3 className="text-sm font-semibold text-slate-900">No items match current filter</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Add an item to this section or clear your unit/status filters.
+              </p>
+              <button
+                type="button"
+                onClick={() => openAdd()}
+                className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
+              >
+                Add First Entry
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={openAdd}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add {category.isEquipment ? 'Equipment' : 'Item'}
-            </button>
-          </div>
-        </div>
-
-        {filteredItems.length === 0 ? (
-          <div className="p-12 text-center">
-            <h3 className="text-sm font-semibold text-slate-900">No items match current filter</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Add an item to this section or clear your unit/status filters.
-            </p>
-            <button
-              type="button"
-              onClick={openAdd}
-              className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
-            >
-              Add First Entry
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-medium text-slate-500">
-                  <th className="py-2.5 px-4">Item &amp; Location</th>
-                  <th className="py-2.5 px-3">Unit</th>
-                  <th className="py-2.5 px-3">
-                    {category.isEquipment ? 'Serial / Asset ID' : 'Lot / Batch'}
-                  </th>
-                  <th className="py-2.5 px-3">
-                    {category.isEquipment ? 'Status' : 'Stock / Par'}
-                  </th>
-                  <th className="py-2.5 px-3">
-                    {category.isEquipment ? 'Next PM Due' : 'Expiry Date & State'}
-                  </th>
-                  <th className="py-2.5 px-3">Last Verified</th>
-                  <th className="py-2.5 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 text-sm">
-                {filteredItems.map((item) => {
-                  const exp = getExpiryStatus(item.expiryDate, today);
-                  const isLowStock = !category.isEquipment && item.quantity < item.parLevel;
-                  const pmDays =
-                    category.isEquipment && item.nextPmDate
-                      ? daysBetween(today, item.nextPmDate)
-                      : null;
-
-                  return (
-                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-medium text-slate-500">
+                    <th className="py-2.5 px-4">Item &amp; Location</th>
+                    <th className="py-2.5 px-3">Unit</th>
+                    <th className="py-2.5 px-3">
+                      {category.isEquipment ? 'Serial / Asset ID' : 'Lot / Batch'}
+                    </th>
+                    <th className="py-2.5 px-3">
+                      {category.isEquipment ? 'Status' : 'Stock / Par'}
+                    </th>
+                    <th className="py-2.5 px-3">
+                      {category.isEquipment ? 'Next PM Due' : 'Expiry Date & State'}
+                    </th>
+                    <th className="py-2.5 px-3">Last Verified</th>
+                    <th className="py-2.5 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-sm">
+                  {filteredItems.map((item) => {
+                    const exp = getExpiryStatus(item.expiryDate, today);
+                    const isLowStock = !category.isEquipment && item.quantity < item.parLevel;
+                    const pmDays =
+                      category.isEquipment && item.nextPmDate
+                        ? daysBetween(today, item.nextPmDate)
+                        : null;
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 max-w-md">
                         <div className="font-medium text-slate-900">{item.name}</div>
                         <div className="mt-0.5 text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
@@ -656,12 +1177,13 @@ export function InventoryModuleView({
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Official Emergency Bag Checklist Printable Form */}
       {isTransferBag && (
@@ -680,6 +1202,49 @@ export function InventoryModuleView({
         </div>
       )}
 
+      {/* Official Monthly Store Checklist Printable Form (GH/NUR/2025-19) */}
+      {isStore && (
+        <div
+          className={
+            viewMode === 'print-preview'
+              ? 'block overflow-x-auto pb-4'
+              : 'hidden print-only-block'
+          }
+        >
+          <div className="no-print mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-xs text-slate-600">
+            <div>
+              Showing printable <span className="font-semibold text-slate-800">Monthly Store checklist (GH/NUR/2025-19)</span> —{' '}
+              <span className="font-mono font-semibold text-slate-900">
+                {printableStoreItems.length}
+              </span>{' '}
+              items
+              {storeSectionFilter !== 'All' ? ` (${storeSectionFilter})` : ' across all 8 sections'}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium text-slate-500">Section to Print:</span>
+              <select
+                value={storeSectionFilter}
+                onChange={(e) => setStoreSectionFilter(e.target.value)}
+                className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              >
+                <option value="All">All Sections ({categoryItems.length})</option>
+                {storeSections.map((sec) => (
+                  <option key={sec.name} value={sec.name}>
+                    {sec.name} ({sec.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <StoreChecklistPrintView
+            items={printableStoreItems}
+            meta={sectionMeta}
+            wardName={wardName}
+            defaultInspector={defaultInspector}
+          />
+        </div>
+      )}
+
       {/* Add / Edit Item Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
@@ -692,7 +1257,11 @@ export function InventoryModuleView({
             <form onSubmit={handleSaveForm} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  {category.isEquipment ? 'Equipment Name & Model' : 'Item / Medication Name'}
+                  {category.isEquipment
+                    ? 'Equipment Name & Model'
+                    : isStore
+                      ? 'Item description'
+                      : 'Item / Medication Name'}
                 </label>
                 <input
                   type="text"
@@ -703,21 +1272,55 @@ export function InventoryModuleView({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Ward Unit</label>
-                  <select
-                    value={formUnit}
-                    onChange={(e) =>
-                      setFormUnit(e.target.value as 'CCU' | 'SD' | 'General Ward')
-                    }
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                  >
-                    <option value="CCU">CCU</option>
-                    <option value="SD">SD</option>
-                    <option value="General Ward">General Ward</option>
-                  </select>
+              {category.supportsUnitSplit ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Ward Unit</label>
+                    <select
+                      value={formUnit}
+                      onChange={(e) =>
+                        setFormUnit(e.target.value as 'CCU' | 'SD' | 'General Ward')
+                      }
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    >
+                      <option value="CCU">CCU</option>
+                      <option value="SD">SD</option>
+                      <option value="General Ward">General Ward</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Specific Location / Drawer
+                    </label>
+                    <input
+                      type="text"
+                      value={formLocation}
+                      onChange={(e) => setFormLocation(e.target.value)}
+                      placeholder="e.g., Drawer 2 / Shelf A"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    />
+                  </div>
                 </div>
+              ) : isStore ? (
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Store Section
+                  </label>
+                  <input
+                    type="text"
+                    list="store-section-options"
+                    value={formLocation}
+                    onChange={(e) => setFormLocation(e.target.value)}
+                    placeholder="e.g., SURGICAL DISPOSABLE"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                  <datalist id="store-section-options">
+                    {STORE_SECTIONS.map((sec) => (
+                      <option key={sec} value={sec} />
+                    ))}
+                  </datalist>
+                </div>
+              ) : (
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Specific Location / Drawer
@@ -726,11 +1329,11 @@ export function InventoryModuleView({
                     type="text"
                     value={formLocation}
                     onChange={(e) => setFormLocation(e.target.value)}
-                    placeholder="e.g., Drawer 2 / Shelf A"
+                    placeholder="e.g., Front Pocket / Main Compartment"
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                   />
                 </div>
-              </div>
+              )}
 
               {category.isEquipment ? (
                 <div className="grid grid-cols-3 gap-3">
@@ -808,21 +1411,36 @@ export function InventoryModuleView({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={`grid ${isStore ? 'grid-cols-2' : 'grid-cols-2'} gap-3`}>
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        Lot / Batch / Seal #
+                        {isStore ? 'Stock No. (Item Code)' : 'Lot / Batch / Seal #'}
                       </label>
                       <input
                         type="text"
                         value={formBatch}
                         onChange={(e) => setFormBatch(e.target.value)}
+                        placeholder={isStore ? 'e.g., 22J55-60-07011' : ''}
                         className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                       />
                     </div>
+                    {isStore && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 mb-1">
+                          Other Code (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={formOtherCode}
+                          onChange={(e) => setFormOtherCode(e.target.value)}
+                          placeholder="e.g., 22J55-70-01185"
+                          className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        Expiry Date
+                        {isStore ? 'Expiry Date 1' : 'Expiry Date'}
                       </label>
                       <input
                         type="date"
@@ -831,6 +1449,19 @@ export function InventoryModuleView({
                         className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                       />
                     </div>
+                    {isStore && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 mb-1">
+                          Expiry Date 2
+                        </label>
+                        <input
+                          type="date"
+                          value={formSecondExpiry}
+                          onChange={(e) => setFormSecondExpiry(e.target.value)}
+                          className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                        />
+                      </div>
+                    )}
                   </div>
                 </>
               )}

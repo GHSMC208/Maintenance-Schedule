@@ -55,7 +55,9 @@ export interface InventoryItem {
   parLevel: number;
   unitOfMeasure: string;
   batchOrSerial: string;
+  otherCode?: string;
   expiryDate: string | null; // YYYY-MM-DD (used for consumables/meds/sterile packs)
+  secondExpiryDate?: string | null; // YYYY-MM-DD (optional Expiry Date 2 for Store Items)
   equipmentStatus?: EquipmentStatus;
   nextPmDate?: string | null; // YYYY-MM-DD (used for medical equipment PPM)
   lastCheckedDate: string;
@@ -227,6 +229,7 @@ export interface WeeklyStockChecklistForm {
 
 export interface MonthlyStoreRow {
   id: string;
+  isCategoryHeader?: boolean;
   stockNo: string;
   description: string;
   qtyAvailable: string;
@@ -319,6 +322,9 @@ export interface SectionPeriodMeta {
   wardNumber: string;
   month: string;
   year: string;
+  staffName?: string;
+  signature?: string;
+  date?: string;
 }
 
 export interface IvMedsAuditMeta {
