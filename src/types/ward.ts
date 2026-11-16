@@ -58,6 +58,7 @@ export interface InventoryItem {
   otherCode?: string;
   expiryDate: string | null; // YYYY-MM-DD (used for consumables/meds/sterile packs)
   secondExpiryDate?: string | null; // YYYY-MM-DD (optional Expiry Date 2 for Store Items)
+  expiryDisplay?: string; // Verbatim expiry text (e.g., "21/11/2026, 18/11/2026", "03/2030", "NIL", "CSSD")
   equipmentStatus?: EquipmentStatus;
   nextPmDate?: string | null; // YYYY-MM-DD (used for medical equipment PPM)
   lastCheckedDate: string;
@@ -105,18 +106,59 @@ export interface MaintenanceTicket {
 
 export interface OxygenCylinder {
   id: string;
-  cylinderCode: string;
-  location: string;
+  cylinderCode: string; // Cylinder Batch Number (e.g., "5J54")
+  location: string; // Cylinder Location (e.g., "208 CCU")
   unit: 'CCU' | 'SD' | 'General Ward';
   size: 'E-Cylinder (Portable)' | 'D-Cylinder' | 'H/J-Cylinder (Backup)';
-  pressurePsi: number; // 0 - 2200 PSI
+  sizeLiters?: number; // Cylinder Size (ltr), e.g., 1000 or 500
+  dateOfFilling?: string; // DD-MM-YY (e.g., "30-12-25")
+  typeOfGas?: string; // e.g., "OXYGEN"
+  cylinderType?: string; // e.g., "Aluminium"
+  conditionStatus?: string; // e.g., "GOOD/ green"
+  spareAvailable?: boolean; // Availability of Spare Cylinders (Yes/No)
+  pressurePsi: number; // 0 - 2500 PSI (e.g., 2000)
   minThresholdPsi: number; // typically 500 PSI
-  valveAndLeakCheck: boolean;
+  valveAndLeakCheck: boolean; // Regulator & Valve Functioning (Yes/No)
   securedInRack: boolean;
   hydrostaticExpiry: string; // YYYY-MM-DD
   lastCheckedDate: string;
   lastCheckedBy: string;
-  notes: string;
+  notes: string; // Remarks/Issues Noted
+}
+
+export type CheckingWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0=Sunday ... 6=Saturday
+
+export interface CylinderWeekStaffMember {
+  id: string;
+  staffName: string;
+  role: string;
+  signature: string;
+}
+
+export interface CylinderWeekRowRecord {
+  cylinderId: string;
+  date?: string; // DD-MM-YY override
+  pressurePsi?: number;
+  conditionStatus?: string;
+  valveFunctioning?: boolean;
+  spareAvailable?: boolean;
+  checkedBy?: string;
+  remarks?: string;
+}
+
+export interface CylinderWeekPlan {
+  weekNumber: number; // 1..5
+  checkDate: string; // YYYY-MM-DD
+  assignedStaff: CylinderWeekStaffMember[];
+  records?: Record<string, CylinderWeekRowRecord>;
+}
+
+export interface CylinderMonthlySchedule {
+  wardLocation: string; // e.g., "208 CCU"
+  month: number; // 1..12
+  year: number; // e.g., 2026
+  checkDayOfWeek: CheckingWeekday;
+  weeks: CylinderWeekPlan[]; // 4 or 5 weeks depending on month & checking day
 }
 
 export interface OxygenCheckLog {
@@ -335,6 +377,7 @@ export interface SectionPeriodMeta {
   staffName?: string;
   signature?: string;
   date?: string;
+  comments?: string;
   staffAssignments?: StoreStaffAssignment[];
 }
 
@@ -357,6 +400,7 @@ export interface WardStoreData {
   maintenanceTickets: MaintenanceTicket[];
   oxygenCylinders: OxygenCylinder[];
   oxygenLogs: OxygenCheckLog[];
+  cylinderSchedule?: CylinderMonthlySchedule;
   crashCarts: CrashCartChecklist[];
   pharmacyForms: PharmacyFormsState;
   transferBagMeta?: TransferBagChecklistMeta;

@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
+import {
+  createInitialBloodTrolleyItems,
+  createInitialBloodTrolleySdItems,
+} from '../data/bloodTrolleySeed';
 import { createInitialCrashCarts } from '../data/crashCartSeed';
 import {
   createDefaultSectionPeriodMeta,
+  createInitialBloodTrolleyStaff,
+  createInitialPrepRoomStaff,
   createInitialProcedureTrolleyStaff,
   createInitialSectionMeta,
   createInitialStoreStaff,
@@ -12,16 +18,29 @@ import {
   createInitialIvMedsItems,
 } from '../data/ivMedsSeed';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
+import {
+  createInitialPrepRoomItems,
+  DEFAULT_PREP_ROOM_CCU_COMMENTS,
+} from '../data/prepRoomSeed';
 import { createInitialProcedureTrolleyItems } from '../data/procedureTrolleySeed';
 import { createInitialStoreItems } from '../data/storeItemsSeed';
 import {
   createInitialTransferBagItems,
   createInitialTransferBagMeta,
 } from '../data/transferBagSeed';
+import {
+  buildCylinderWeeksForMonth,
+  createDefaultWeekStaff,
+  createInitialCylinderSchedule,
+  createInitialOfficialCylinders,
+} from '../data/oxygenCylinderSeed';
 import type {
   CadChecklistForm,
   CategoryMeta,
   CrashCartChecklist,
+  CylinderMonthlySchedule,
+  CylinderWeekRowRecord,
+  CylinderWeekStaffMember,
   EnvironmentalCheckItem,
   InventoryItem,
   IvMedsAuditMeta,
@@ -117,6 +136,117 @@ function migrateLegacyProcedureTrolleyInventory(
   return [...nonPt, ...createInitialProcedureTrolleyItems(today)];
 }
 
+function migrateLegacyPrepRoomInventory(
+  inventory: InventoryItem[],
+  today: string
+): InventoryItem[] {
+  const prItems = inventory.filter((it) => it.categoryId === 'prep-room');
+  const isLegacyFour =
+    prItems.length === 4 &&
+    prItems.every((it) => ['pr-01', 'pr-02', 'pr-03', 'pr-04'].includes(it.id)) &&
+    prItems.some((it) => it.name.includes('Sterile Water for Injection 100ml'));
+
+  if (!isLegacyFour) return inventory;
+
+  const nonPr = inventory.filter((it) => it.categoryId !== 'prep-room');
+  return [...nonPr, ...createInitialPrepRoomItems(today)];
+}
+
+function migrateLegacyBloodTrolleyInventory(
+  inventory: InventoryItem[],
+  today: string
+): InventoryItem[] {
+  const btItems = inventory.filter((it) => it.categoryId === 'blood-trolley');
+  const isLegacyFour =
+    btItems.length === 4 &&
+    btItems.every((it) => ['bt-01', 'bt-02', 'bt-03', 'bt-04'].includes(it.id)) &&
+    btItems.some((it) => it.name.includes('EDTA Purple-Top Vacutainer Tubes 4ml'));
+
+  if (isLegacyFour) {
+    const nonBt = inventory.filter((it) => it.categoryId !== 'blood-trolley');
+    return [...nonBt, ...createInitialBloodTrolleyItems(today)];
+  }
+
+  const hasSdItems = btItems.some((it) => it.unit === 'SD' || it.id.startsWith('bt-sd-'));
+  if (btItems.length > 0 && !hasSdItems) {
+    return [...inventory, ...createInitialBloodTrolleySdItems(today)];
+  }
+
+  return inventory;
+}
+
+function migrateLegacyOxygenCylinders(
+  cylinders: OxygenCylinder[] | undefined,
+  today: string
+): OxygenCylinder[] {
+  if (!Array.isArray(cylinders) || cylinders.length === 0) {
+    return createInitialOfficialCylinders(today);
+  }
+  const isLegacyFive =
+    cylinders.length === 5 &&
+    cylinders.every((c) => ['ox-01', 'ox-02', 'ox-03', 'ox-04', 'ox-05'].includes(c.id)) &&
+    cylinders.some((c) => c.cylinderCode === 'O2-CCU-E01');
+
+  if (isLegacyFive) {
+    return createInitialOfficialCylinders(today);
+  }
+
+  return cylinders.map((c) => ({
+    ...c,
+    sizeLiters:
+      c.sizeLiters ?? (c.size === 'H/J-Cylinder (Backup)' ? 1000 : 500),
+    dateOfFilling: c.dateOfFilling ?? '',
+    typeOfGas: c.typeOfGas ?? 'OXYGEN',
+    cylinderType: c.cylinderType ?? 'Aluminium',
+    conditionStatus: c.conditionStatus ?? 'GOOD/ green',
+    spareAvailable: c.spareAvailable ?? true,
+  }));
+}
+
+function hydrateCylinderSchedule(
+  raw: CylinderMonthlySchedule | undefined,
+  today: string
+): CylinderMonthlySchedule {
+  const base = createInitialCylinderSchedule(today);
+  if (!raw || typeof raw !== 'object') return base;
+  const month =
+    Number.isFinite(raw.month) && raw.month >= 1 && raw.month <= 12 ? raw.month : base.month;
+  const year =
+    Number.isFinite(raw.year) && raw.year >= 2020 && raw.year <= 2099 ? raw.year : base.year;
+  const checkDayOfWeek =
+    raw.checkDayOfWeek >= 0 && raw.checkDayOfWeek <= 6
+      ? raw.checkDayOfWeek
+      : base.checkDayOfWeek;
+  const recomputedWeeks = buildCylinderWeeksForMonth(
+    year,
+    month,
+    checkDayOfWeek,
+    Array.isArray(raw.weeks) ? raw.weeks : undefined
+  );
+  // Preserve manual date overrides if the stored week matches the same month & year
+  const weeks = recomputedWeeks.map((wk) => {
+    const prev = raw.weeks?.find((pw) => pw.weekNumber === wk.weekNumber);
+    if (
+      prev?.checkDate &&
+      prev.checkDate.startsWith(`${year}-${String(month).padStart(2, '0')}-`) &&
+      raw.month === month &&
+      raw.year === year &&
+      raw.checkDayOfWeek === checkDayOfWeek
+    ) {
+      return { ...wk, checkDate: prev.checkDate };
+    }
+    return wk;
+  });
+
+  return {
+    wardLocation: raw.wardLocation?.trim() || base.wardLocation,
+    month,
+    year,
+    checkDayOfWeek,
+    weeks,
+  };
+}
+
 function hydrateIvMedsAuditMeta(
   raw: IvMedsAuditMeta | undefined,
   today: string
@@ -197,14 +327,56 @@ function hydrateSectionMeta(
         } else {
           staffAssignments = createInitialProcedureTrolleyStaff(today);
         }
+      } else if (key === 'prep-room') {
+        if (Array.isArray(val.staffAssignments) && val.staffAssignments.length > 0) {
+          staffAssignments = [...val.staffAssignments];
+        } else if (val.staffName && val.staffName !== createInitialPrepRoomStaff(today)[0].staffName) {
+          const defaults = createInitialPrepRoomStaff(today);
+          staffAssignments = [
+            {
+              ...defaults[0],
+              staffName: val.staffName,
+              signature: val.signature ?? '',
+              checkedDate: val.date ?? defaults[0].checkedDate,
+            },
+            ...defaults.slice(1),
+          ];
+        } else {
+          staffAssignments = createInitialPrepRoomStaff(today);
+        }
+      } else if (key === 'blood-trolley') {
+        if (Array.isArray(val.staffAssignments) && val.staffAssignments.length > 0) {
+          staffAssignments = [...val.staffAssignments];
+        } else if (val.staffName || val.signature || val.date) {
+          const fallback = createInitialBloodTrolleyStaff(today)[0];
+          staffAssignments = [
+            {
+              ...fallback,
+              staffName: val.staffName ?? fallback.staffName,
+              signature: val.signature ?? '',
+              checkedDate: val.date ?? fallback.checkedDate,
+            },
+          ];
+        } else {
+          staffAssignments = createInitialBloodTrolleyStaff(today);
+        }
       }
       merged[key] = {
-        wardNumber: val.wardNumber ?? def.wardNumber,
+        wardNumber:
+          key === 'blood-trolley'
+            ? val.wardNumber === '208 CCU'
+              ? '208'
+              : val.wardNumber || '208'
+            : val.wardNumber ?? def.wardNumber,
         month: val.month ?? def.month,
         year: val.year ?? def.year,
         staffName: val.staffName,
         signature: val.signature,
         date: val.date,
+        comments:
+          key === 'prep-room'
+            ? val.comments ?? DEFAULT_PREP_ROOM_CCU_COMMENTS
+            : val.comments,
         staffAssignments,
       };
     }
@@ -245,15 +417,21 @@ function loadInitialStore(): WardStoreData {
           : initial.pharmacyForms;
         const today = getTodayIso();
         const hydratedForms = syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts);
-        const migratedInventory = migrateLegacyProcedureTrolleyInventory(
-          migrateLegacyIvMedsInventory(
-            migrateLegacyStoreInventory(
-              migrateLegacyTransferBagInventory(parsed.inventory),
+        const migratedInventory = migrateLegacyBloodTrolleyInventory(
+          migrateLegacyPrepRoomInventory(
+            migrateLegacyProcedureTrolleyInventory(
+              migrateLegacyIvMedsInventory(
+                migrateLegacyStoreInventory(
+                  migrateLegacyTransferBagInventory(parsed.inventory),
+                  today
+                ),
+                hydratedForms,
+                today,
+                parsed.defaultInspector || initial.defaultInspector
+              ),
               today
             ),
-            hydratedForms,
-            today,
-            parsed.defaultInspector || initial.defaultInspector
+            today
           ),
           today
         );
@@ -261,6 +439,8 @@ function loadInitialStore(): WardStoreData {
           ...initial,
           ...parsed,
           inventory: migratedInventory,
+          oxygenCylinders: migrateLegacyOxygenCylinders(parsed.oxygenCylinders, today),
+          cylinderSchedule: hydrateCylinderSchedule(parsed.cylinderSchedule, today),
           crashCarts: hydratedCrashCarts,
           pharmacyForms: hydratedForms,
           transferBagMeta: {
@@ -386,6 +566,8 @@ export function useWardStore() {
         item.categoryId === 'transfer-bag' ||
         item.categoryId === 'iv-meds' ||
         item.categoryId === 'procedure-trolley' ||
+        item.categoryId === 'prep-room' ||
+        item.categoryId === 'blood-trolley' ||
         item.categoryId === 'store'
           ? [...prev.inventory, newItem]
           : [newItem, ...prev.inventory],
@@ -540,6 +722,9 @@ export function useWardStore() {
       pressurePsi: number;
       valveAndLeakCheck: boolean;
       securedInRack: boolean;
+      conditionStatus?: string;
+      spareAvailable?: boolean;
+      weekNumber?: number;
       inspector: string;
       notes: string;
     }
@@ -561,6 +746,32 @@ export function useWardStore() {
         notes: payload.notes,
       };
 
+      const baseSchedule = prev.cylinderSchedule || createInitialCylinderSchedule(today);
+      const nextWeeks =
+        payload.weekNumber !== undefined
+          ? baseSchedule.weeks.map((wk) => {
+              if (wk.weekNumber !== payload.weekNumber) return wk;
+              const prevRec = wk.records?.[cylinderId];
+              return {
+                ...wk,
+                records: {
+                  ...(wk.records || {}),
+                  [cylinderId]: {
+                    ...(prevRec || { cylinderId }),
+                    cylinderId,
+                    pressurePsi: payload.pressurePsi,
+                    valveFunctioning: payload.valveAndLeakCheck,
+                    conditionStatus:
+                      payload.conditionStatus ?? cyl.conditionStatus ?? 'GOOD/ green',
+                    spareAvailable: payload.spareAvailable ?? cyl.spareAvailable ?? true,
+                    checkedBy: payload.inspector || prev.defaultInspector,
+                    remarks: payload.notes,
+                  },
+                },
+              };
+            })
+          : baseSchedule.weeks;
+
       return {
         ...prev,
         oxygenCylinders: prev.oxygenCylinders.map((c) =>
@@ -570,15 +781,27 @@ export function useWardStore() {
                 pressurePsi: payload.pressurePsi,
                 valveAndLeakCheck: payload.valveAndLeakCheck,
                 securedInRack: payload.securedInRack,
+                conditionStatus: payload.conditionStatus ?? c.conditionStatus ?? 'GOOD/ green',
+                spareAvailable: payload.spareAvailable ?? c.spareAvailable ?? true,
                 lastCheckedDate: today,
                 lastCheckedBy: payload.inspector || prev.defaultInspector,
                 notes: payload.notes,
               }
             : c
         ),
+        cylinderSchedule: { ...baseSchedule, weeks: nextWeeks },
         oxygenLogs: [newLog, ...prev.oxygenLogs].slice(0, 100),
       };
     });
+  };
+
+  const updateOxygenCylinder = (cylinderId: string, patch: Partial<OxygenCylinder>) => {
+    setData((prev) => ({
+      ...prev,
+      oxygenCylinders: prev.oxygenCylinders.map((c) =>
+        c.id === cylinderId ? { ...c, ...patch } : c
+      ),
+    }));
   };
 
   const addOxygenCylinder = (cyl: Omit<OxygenCylinder, 'id'>) => {
@@ -597,6 +820,129 @@ export function useWardStore() {
       ...prev,
       oxygenCylinders: prev.oxygenCylinders.filter((c) => c.id !== cylinderId),
     }));
+  };
+
+  const updateCylinderSchedule = (
+    patch: Partial<Pick<CylinderMonthlySchedule, 'wardLocation' | 'month' | 'year' | 'checkDayOfWeek'>>
+  ) => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const current = prev.cylinderSchedule || createInitialCylinderSchedule(today);
+      const nextMonth = patch.month ?? current.month;
+      const nextYear = patch.year ?? current.year;
+      const nextDay = patch.checkDayOfWeek ?? current.checkDayOfWeek;
+      const scheduleChanged =
+        nextMonth !== current.month ||
+        nextYear !== current.year ||
+        nextDay !== current.checkDayOfWeek;
+
+      const nextWeeks = scheduleChanged
+        ? buildCylinderWeeksForMonth(nextYear, nextMonth, nextDay, current.weeks)
+        : current.weeks;
+
+      return {
+        ...prev,
+        cylinderSchedule: {
+          ...current,
+          ...patch,
+          month: nextMonth,
+          year: nextYear,
+          checkDayOfWeek: nextDay,
+          weeks: nextWeeks,
+        },
+      };
+    });
+  };
+
+  const updateCylinderWeekDate = (weekNumber: number, checkDate: string) => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const current = prev.cylinderSchedule || createInitialCylinderSchedule(today);
+      return {
+        ...prev,
+        cylinderSchedule: {
+          ...current,
+          weeks: current.weeks.map((wk) =>
+            wk.weekNumber === weekNumber ? { ...wk, checkDate } : wk
+          ),
+        },
+      };
+    });
+  };
+
+  const updateCylinderWeekStaff = (
+    weekNumber: number,
+    assignedStaff: CylinderWeekStaffMember[]
+  ) => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const current = prev.cylinderSchedule || createInitialCylinderSchedule(today);
+      const safeStaff =
+        assignedStaff.length > 0 ? assignedStaff : createDefaultWeekStaff(weekNumber);
+      return {
+        ...prev,
+        cylinderSchedule: {
+          ...current,
+          weeks: current.weeks.map((wk) =>
+            wk.weekNumber === weekNumber ? { ...wk, assignedStaff: safeStaff } : wk
+          ),
+        },
+      };
+    });
+  };
+
+  const copyCylinderWeek1StaffToAll = () => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const current = prev.cylinderSchedule || createInitialCylinderSchedule(today);
+      const week1 = current.weeks.find((w) => w.weekNumber === 1);
+      if (!week1) return prev;
+      return {
+        ...prev,
+        cylinderSchedule: {
+          ...current,
+          weeks: current.weeks.map((wk) =>
+            wk.weekNumber === 1
+              ? wk
+              : {
+                  ...wk,
+                  assignedStaff: week1.assignedStaff.map((st, idx) => ({
+                    ...st,
+                    id: `cyl-w${wk.weekNumber}-st-${idx + 1}-${Date.now().toString(36)}`,
+                  })),
+                }
+          ),
+        },
+      };
+    });
+  };
+
+  const updateCylinderWeekRecord = (
+    weekNumber: number,
+    cylinderId: string,
+    recordPatch: Partial<CylinderWeekRowRecord>
+  ) => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const current = prev.cylinderSchedule || createInitialCylinderSchedule(today);
+      return {
+        ...prev,
+        cylinderSchedule: {
+          ...current,
+          weeks: current.weeks.map((wk) => {
+            if (wk.weekNumber !== weekNumber) return wk;
+            const existing = wk.records?.[cylinderId] || { cylinderId };
+            return {
+              ...wk,
+              records: {
+                ...(wk.records || {}),
+                [cylinderId]: { ...existing, ...recordPatch, cylinderId },
+              },
+            };
+          }),
+        },
+      };
+    });
   };
 
   // --- Crash Cart Weekly Checklists ---
@@ -956,6 +1302,8 @@ export function useWardStore() {
       ...initial,
       ...imported,
       inventory: nextInventory,
+      oxygenCylinders: migrateLegacyOxygenCylinders(imported.oxygenCylinders, today),
+      cylinderSchedule: hydrateCylinderSchedule(imported.cylinderSchedule, today),
       crashCarts: nextCarts,
       pharmacyForms: hydratedForms,
       transferBagMeta: {
@@ -995,8 +1343,14 @@ export function useWardStore() {
     updateMaintenanceTicketStatus,
     deleteMaintenanceTicket,
     logOxygenCylinderCheck,
+    updateOxygenCylinder,
     addOxygenCylinder,
     deleteOxygenCylinder,
+    updateCylinderSchedule,
+    updateCylinderWeekDate,
+    updateCylinderWeekStaff,
+    copyCylinderWeek1StaffToAll,
+    updateCylinderWeekRecord,
     updateCrashCart,
     updateCrashCartItemSlot,
     addCrashCart,

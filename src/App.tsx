@@ -44,8 +44,14 @@ export default function App() {
     updateMaintenanceTicketStatus,
     deleteMaintenanceTicket,
     logOxygenCylinderCheck,
+    updateOxygenCylinder,
     addOxygenCylinder,
     deleteOxygenCylinder,
+    updateCylinderSchedule,
+    updateCylinderWeekDate,
+    updateCylinderWeekStaff,
+    copyCylinderWeek1StaffToAll,
+    updateCylinderWeekRecord,
     updateCrashCart,
     updateCrashCartItemSlot,
     addCrashCart,
@@ -358,7 +364,14 @@ export default function App() {
                 cylinders={data.oxygenCylinders}
                 logs={data.oxygenLogs}
                 defaultInspector={data.defaultInspector}
+                cylinderSchedule={data.cylinderSchedule}
+                onUpdateSchedule={updateCylinderSchedule}
+                onUpdateWeekDate={updateCylinderWeekDate}
+                onUpdateWeekStaff={updateCylinderWeekStaff}
+                onCopyWeek1StaffToAll={copyCylinderWeek1StaffToAll}
+                onUpdateWeekRecord={updateCylinderWeekRecord}
                 onLogCheck={logOxygenCylinderCheck}
+                onUpdateCylinder={updateOxygenCylinder}
                 onAddCylinder={addOxygenCylinder}
                 onDeleteCylinder={deleteOxygenCylinder}
               />

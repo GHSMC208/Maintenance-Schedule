@@ -1,12 +1,21 @@
 import type { CategoryMeta, SectionPeriodMeta, WardStoreData } from '../types/ward';
 import { addDaysIso, getTodayIso } from '../utils/dateUtils';
 import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
+import { createInitialBloodTrolleyItems } from './bloodTrolleySeed';
 import { createInitialCrashCarts } from './crashCartSeed';
 import {
   createInitialIvMedsAuditMeta,
   createInitialIvMedsItems,
 } from './ivMedsSeed';
 import { createInitialPharmacyForms } from './pharmacyFormsSeed';
+import {
+  createInitialCylinderSchedule,
+  createInitialOfficialCylinders,
+} from './oxygenCylinderSeed';
+import {
+  createInitialPrepRoomItems,
+  DEFAULT_PREP_ROOM_CCU_COMMENTS,
+} from './prepRoomSeed';
 import { createInitialProcedureTrolleyItems } from './procedureTrolleySeed';
 import { createInitialStoreItems } from './storeItemsSeed';
 import {
@@ -42,7 +51,8 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
     id: 'blood-trolley',
     label: 'Blood Collection Trolley (CCU & SD)',
     shortLabel: 'Blood Trolley CCU/SD',
-    description: 'Phlebotomy vacutainer tubes, blood culture bottles, needles, and trolley expiry checks.',
+    description:
+      'Official 4-drawer Blood Collection Trolley Expiry Checklist covering 1st–4th Drawers across CCU and SD.',
     supportsUnitSplit: true,
   },
   {
@@ -113,6 +123,52 @@ export function createInitialProcedureTrolleyStaff(today: string) {
   ];
 }
 
+export function createInitialPrepRoomStaff(today: string) {
+  const [y, m, d] = today.split('-');
+  const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
+  return [
+    {
+      id: 'pr-staff-1',
+      staffName: 'RN Sara Al-Mansoor',
+      role: 'Staff Nurse / CCU Lead',
+      assignedSections: 'CCU Preparation Room (No. 1–38)',
+      checkedDate: slashDate,
+      signature: '',
+    },
+    {
+      id: 'pr-staff-2',
+      staffName: 'RN Nadia Omar',
+      role: 'Staff Nurse / SD Lead',
+      assignedSections: 'SD Preparation Room (No. 1–32)',
+      checkedDate: slashDate,
+      signature: '',
+    },
+  ];
+}
+
+export function createInitialBloodTrolleyStaff(today: string) {
+  const [y, m, d] = today.split('-');
+  const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
+  return [
+    {
+      id: 'bt-staff-1',
+      staffName: 'RN Sara Al-Mansoor',
+      role: 'Staff Nurse / CCU Lead',
+      assignedSections: 'CCU Blood Collection Trolley (1st – 4th Drawer)',
+      checkedDate: slashDate,
+      signature: '',
+    },
+    {
+      id: 'bt-staff-2',
+      staffName: 'RN Nadia Omar',
+      role: 'Staff Nurse / SD Lead',
+      assignedSections: 'SD Blood Collection Trolley (1st – 4th Drawer)',
+      checkedDate: slashDate,
+      signature: '',
+    },
+  ];
+}
+
 export function createInitialSectionMeta(today: string): Record<string, SectionPeriodMeta> {
   const base = createDefaultSectionPeriodMeta(today);
   const [y, m, d] = today.split('-');
@@ -126,8 +182,22 @@ export function createInitialSectionMeta(today: string): Record<string, SectionP
       date: slashDate,
       staffAssignments: createInitialStoreStaff(today),
     },
-    'prep-room': { ...base },
-    'blood-trolley': { ...base },
+    'prep-room': {
+      ...base,
+      staffName: 'RN Sara Al-Mansoor',
+      signature: '',
+      date: slashDate,
+      comments: DEFAULT_PREP_ROOM_CCU_COMMENTS,
+      staffAssignments: createInitialPrepRoomStaff(today),
+    },
+    'blood-trolley': {
+      ...base,
+      wardNumber: '208',
+      staffName: 'RN Sara Al-Mansoor',
+      signature: '',
+      date: slashDate,
+      staffAssignments: createInitialBloodTrolleyStaff(today),
+    },
     'procedure-trolley': {
       ...base,
       staffName: 'RN Tariq Youssef',
@@ -384,129 +454,11 @@ export function createInitialWardData(): WardStoreData {
       // Store Items (Official Store Checklist Catalog)
       ...createInitialStoreItems(today),
 
-      // Preparation Room (CCU & SD)
-      {
-        id: 'pr-01',
-        categoryId: 'prep-room',
-        name: 'Sterile Water for Injection 100ml',
-        unit: 'CCU',
-        locationDetail: 'CCU Prep Room Cabinet 1',
-        quantity: 20,
-        parLevel: 20,
-        unitOfMeasure: 'bottles',
-        batchOrSerial: 'LOT-SWI-334',
-        expiryDate: addDaysIso(today, 18),
-        lastCheckedDate: addDaysIso(today, -3),
-        lastCheckedBy: 'RN Sara Al-Mansoor',
-        notes: '12 bottles expire in 18 days; prioritize use or exchange with pharmacy.',
-      },
-      {
-        id: 'pr-02',
-        categoryId: 'prep-room',
-        name: 'Chlorhexidine 2% / Alcohol 70% Prep Pads',
-        unit: 'CCU',
-        locationDetail: 'CCU Prep Bench',
-        quantity: 120,
-        parLevel: 100,
-        unitOfMeasure: 'swabs',
-        batchOrSerial: 'LOT-CHG-812',
-        expiryDate: addDaysIso(today, 195),
-        lastCheckedDate: addDaysIso(today, -3),
-        lastCheckedBy: 'RN Sara Al-Mansoor',
-        notes: 'Box sealed and clean.',
-      },
-      {
-        id: 'pr-03',
-        categoryId: 'prep-room',
-        name: 'Heparin Lock Flush 100 units/ml (5ml Syringes)',
-        unit: 'SD',
-        locationDetail: 'SD Prep Room Bin 3',
-        quantity: 15,
-        parLevel: 25,
-        unitOfMeasure: 'syringes',
-        batchOrSerial: 'LOT-HPL-502',
-        expiryDate: addDaysIso(today, 95),
-        lastCheckedDate: addDaysIso(today, -5),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Below par level (15/25); restock from pharmacy.',
-      },
-      {
-        id: 'pr-04',
-        categoryId: 'prep-room',
-        name: '0.9% Sodium Chloride 10ml Flush Vials',
-        unit: 'SD',
-        locationDetail: 'SD Prep Room Bin 1',
-        quantity: 60,
-        parLevel: 50,
-        unitOfMeasure: 'vials',
-        batchOrSerial: 'LOT-NS10-441',
-        expiryDate: addDaysIso(today, 270),
-        lastCheckedDate: addDaysIso(today, -5),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Verified intact.',
-      },
+      // Preparation Room (Official CCU 38-item & SD 32-item Checklists)
+      ...createInitialPrepRoomItems(today),
 
-      // Blood Collection Trolley (CCU & SD)
-      {
-        id: 'bt-01',
-        categoryId: 'blood-trolley',
-        name: 'EDTA Purple-Top Vacutainer Tubes 4ml',
-        unit: 'CCU',
-        locationDetail: 'CCU Blood Trolley Drawer 1',
-        quantity: 50,
-        parLevel: 40,
-        unitOfMeasure: 'tubes',
-        batchOrSerial: 'LOT-ED-772',
-        expiryDate: addDaysIso(today, 140),
-        lastCheckedDate: addDaysIso(today, -6),
-        lastCheckedBy: 'RN Sara Al-Mansoor',
-        notes: 'Vacuum expiry verified.',
-      },
-      {
-        id: 'bt-02',
-        categoryId: 'blood-trolley',
-        name: 'Sodium Citrate Blue-Top Coagulation Tubes',
-        unit: 'CCU',
-        locationDetail: 'CCU Blood Trolley Drawer 1',
-        quantity: 24,
-        parLevel: 30,
-        unitOfMeasure: 'tubes',
-        batchOrSerial: 'LOT-SC-199',
-        expiryDate: addDaysIso(today, -4),
-        lastCheckedDate: addDaysIso(today, -6),
-        lastCheckedBy: 'RN Sara Al-Mansoor',
-        notes: 'CRITICAL: Expired 4 days ago — remove tray & replace from lab store immediately.',
-      },
-      {
-        id: 'bt-03',
-        categoryId: 'blood-trolley',
-        name: 'BACTEC Aerobic & Anaerobic Blood Culture Bottles',
-        unit: 'SD',
-        locationDetail: 'SD Blood Trolley Lower Shelf',
-        quantity: 8,
-        parLevel: 10,
-        unitOfMeasure: 'pairs',
-        batchOrSerial: 'LOT-BC-614',
-        expiryDate: addDaysIso(today, 26),
-        lastCheckedDate: addDaysIso(today, -5),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Sensor bottoms intact; expiring within 30 days.',
-      },
-      {
-        id: 'bt-04',
-        categoryId: 'blood-trolley',
-        name: 'Safety Butterfly Blood Collection Sets 21G & 23G',
-        unit: 'SD',
-        locationDetail: 'SD Blood Trolley Drawer 2',
-        quantity: 35,
-        parLevel: 30,
-        unitOfMeasure: 'pcs',
-        batchOrSerial: 'LOT-BF-302',
-        expiryDate: addDaysIso(today, 380),
-        lastCheckedDate: addDaysIso(today, -5),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Stock adequate.',
-      },
+      // Blood Collection Trolley (Official 4-Drawer 54-Item Checklist)
+      ...createInitialBloodTrolleyItems(today),
 
       // Procedure Trolley (Official 42-Row Procedure Trolley Checklist)
       ...createInitialProcedureTrolleyItems(today),
@@ -659,105 +611,19 @@ export function createInitialWardData(): WardStoreData {
         notes: 'Check thermostat damper and filter cleaning.',
       },
     ],
-    oxygenCylinders: [
-      {
-        id: 'ox-01',
-        cylinderCode: 'O2-CCU-E01',
-        location: 'CCU Crash Cart Side Bracket',
-        unit: 'CCU',
-        size: 'E-Cylinder (Portable)',
-        pressurePsi: 1950,
-        minThresholdPsi: 500,
-        valveAndLeakCheck: true,
-        securedInRack: true,
-        hydrostaticExpiry: addDaysIso(today, 480),
-        lastCheckedDate: addDaysIso(today, -7),
-        lastCheckedBy: 'RN Khalid Hassan',
-        notes: 'Full & sealed; regulator wrench attached.',
-      },
-      {
-        id: 'ox-02',
-        cylinderCode: 'O2-TRANS-E02',
-        location: 'Emergency Patient Transfer Trolley',
-        unit: 'CCU',
-        size: 'E-Cylinder (Portable)',
-        pressurePsi: 420,
-        minThresholdPsi: 500,
-        valveAndLeakCheck: true,
-        securedInRack: true,
-        hydrostaticExpiry: addDaysIso(today, 310),
-        lastCheckedDate: addDaysIso(today, -7),
-        lastCheckedBy: 'RN Khalid Hassan',
-        notes: 'BELOW THRESHOLD: Swap cylinder with full E-cylinder from manifold room before next patient transfer.',
-      },
-      {
-        id: 'ox-03',
-        cylinderCode: 'O2-SD-E03',
-        location: 'SD Corridor Emergency Rack #1',
-        unit: 'SD',
-        size: 'E-Cylinder (Portable)',
-        pressurePsi: 1850,
-        minThresholdPsi: 500,
-        valveAndLeakCheck: true,
-        securedInRack: true,
-        hydrostaticExpiry: addDaysIso(today, 520),
-        lastCheckedDate: addDaysIso(today, -7),
-        lastCheckedBy: 'RN Khalid Hassan',
-        notes: 'Ready for bedside transport.',
-      },
-      {
-        id: 'ox-04',
-        cylinderCode: 'O2-SD-E04',
-        location: 'SD Corridor Emergency Rack #2',
-        unit: 'SD',
-        size: 'E-Cylinder (Portable)',
-        pressurePsi: 980,
-        minThresholdPsi: 500,
-        valveAndLeakCheck: true,
-        securedInRack: true,
-        hydrostaticExpiry: addDaysIso(today, 220),
-        lastCheckedDate: addDaysIso(today, -7),
-        lastCheckedBy: 'RN Khalid Hassan',
-        notes: 'Half full — schedule exchange during routine gas delivery.',
-      },
-      {
-        id: 'ox-05',
-        cylinderCode: 'O2-WARD-H01',
-        location: 'Ward Gas Alcove Backup Manifold',
-        unit: 'General Ward',
-        size: 'H/J-Cylinder (Backup)',
-        pressurePsi: 2000,
-        minThresholdPsi: 500,
-        valveAndLeakCheck: true,
-        securedInRack: true,
-        hydrostaticExpiry: addDaysIso(today, 640),
-        lastCheckedDate: addDaysIso(today, -7),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Double-chained to wall bracket; emergency backup supply.',
-      },
-    ],
+    oxygenCylinders: createInitialOfficialCylinders(today),
+    cylinderSchedule: createInitialCylinderSchedule(today),
     oxygenLogs: [
       {
         id: 'oxl-01',
         cylinderId: 'ox-01',
-        cylinderCode: 'O2-CCU-E01',
-        checkedDate: addDaysIso(today, -7),
+        cylinderCode: '5J54',
+        checkedDate: today,
         inspector: 'RN Khalid Hassan',
-        pressurePsi: 1950,
+        pressurePsi: 2000,
         valvePass: true,
         securedPass: true,
-        notes: 'Weekly check passed.',
-      },
-      {
-        id: 'oxl-02',
-        cylinderId: 'ox-02',
-        cylinderCode: 'O2-TRANS-E02',
-        checkedDate: addDaysIso(today, -7),
-        inspector: 'RN Khalid Hassan',
-        pressurePsi: 420,
-        valvePass: true,
-        securedPass: true,
-        notes: 'Flagged for swap (< 500 PSI).',
+        notes: 'Weekly check passed — GOOD/ green.',
       },
     ],
   };

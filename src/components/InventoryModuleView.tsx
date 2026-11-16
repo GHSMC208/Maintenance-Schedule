@@ -30,8 +30,12 @@ import {
   getTodayIso,
   isItemAttentionNeeded,
 } from '../utils/dateUtils';
+import { BLOOD_TROLLEY_DRAWERS } from '../data/bloodTrolleySeed';
+import { getEarliestIsoFromExpiryText } from '../data/prepRoomSeed';
 import { STORE_SECTIONS } from '../data/storeItemsSeed';
+import { BloodTrolleyPrintView, type BloodTrolleyPrintScope } from './BloodTrolleyPrintView';
 import { EmergencyBagPrintView } from './EmergencyBagPrintView';
+import { PrepRoomPrintView, type PrepRoomPrintScope } from './PrepRoomPrintView';
 import { ProcedureTrolleyPrintView } from './ProcedureTrolleyPrintView';
 import {
   StoreChecklistPrintView,
@@ -71,11 +75,20 @@ export function InventoryModuleView({
   const isTransferBag = category.id === 'transfer-bag';
   const isStore = category.id === 'store';
   const isProcedureTrolley = category.id === 'procedure-trolley';
+  const isPrepRoom = category.id === 'prep-room';
+  const isBloodTrolley = category.id === 'blood-trolley';
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [unitFilter, setUnitFilter] = useState<'All' | 'CCU' | 'SD' | 'General Ward'>('All');
   const [storeSectionFilter, setStoreSectionFilter] = useState<string>('All');
+  const [bloodTrolleyDrawerFilter, setBloodTrolleyDrawerFilter] = useState<string>('All');
   const [storePrintLayout, setStorePrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
   const [trolleyPrintLayout, setTrolleyPrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
+  const [prepRoomPrintScope, setPrepRoomPrintScope] = useState<PrepRoomPrintScope>('both');
+  const [prepRoomPrintLayout, setPrepRoomPrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
+  const [bloodTrolleyPrintScope, setBloodTrolleyPrintScope] =
+    useState<BloodTrolleyPrintScope>('both');
+  const [bloodTrolleyPrintLayout, setBloodTrolleyPrintLayout] =
+    useState<StorePrintLayoutMode>('two-per-sheet');
   const [collapsedStoreSections, setCollapsedStoreSections] = useState<Record<string, boolean>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'attention'>('all');
   const [search, setSearch] = useState('');
@@ -93,6 +106,7 @@ export function InventoryModuleView({
   const [formBatch, setFormBatch] = useState('');
   const [formOtherCode, setFormOtherCode] = useState('');
   const [formExpiry, setFormExpiry] = useState('');
+  const [formExpiryDisplay, setFormExpiryDisplay] = useState('');
   const [formSecondExpiry, setFormSecondExpiry] = useState('');
   const [formEqStatus, setFormEqStatus] = useState<EquipmentStatus>('Operational');
   const [formNextPm, setFormNextPm] = useState('');
@@ -141,10 +155,37 @@ export function InventoryModuleView({
       .map(([name, count]) => ({ name, count }));
   }, [categoryItems, isStore]);
 
+  const bloodTrolleyDrawers = useMemo(() => {
+    if (!isBloodTrolley) return [];
+    const counts = new Map<string, number>();
+    for (const dr of BLOOD_TROLLEY_DRAWERS) counts.set(dr, 0);
+    for (const it of categoryItems) {
+      if (unitFilter !== 'All' && it.unit !== unitFilter) continue;
+      const key = it.locationDetail?.trim() || BLOOD_TROLLEY_DRAWERS[0];
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => ({ name, count }));
+  }, [categoryItems, isBloodTrolley, unitFilter]);
+
+  const bloodTrolleyUnitTotal = useMemo(() => {
+    if (!isBloodTrolley) return 0;
+    if (unitFilter === 'All') return categoryItems.length;
+    return categoryItems.filter((it) => it.unit === unitFilter).length;
+  }, [categoryItems, isBloodTrolley, unitFilter]);
+
   const filteredItems = useMemo(() => {
     return categoryItems.filter((it) => {
       if (category.supportsUnitSplit && unitFilter !== 'All' && it.unit !== unitFilter) return false;
       if (isStore && storeSectionFilter !== 'All' && it.locationDetail !== storeSectionFilter) {
+        return false;
+      }
+      if (
+        isBloodTrolley &&
+        bloodTrolleyDrawerFilter !== 'All' &&
+        it.locationDetail !== bloodTrolleyDrawerFilter
+      ) {
         return false;
       }
       if (!isStore && statusFilter === 'attention' && !isItemAttentionNeeded(it, today)) {
@@ -163,6 +204,8 @@ export function InventoryModuleView({
     unitFilter,
     isStore,
     storeSectionFilter,
+    isBloodTrolley,
+    bloodTrolleyDrawerFilter,
     statusFilter,
     search,
     today,
@@ -212,17 +255,33 @@ export function InventoryModuleView({
     const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
     return [
       {
-        id: isProcedureTrolley ? 'pt-staff-1' : 'st-staff-1',
+        id: isProcedureTrolley
+          ? 'pt-staff-1'
+          : isPrepRoom
+            ? 'pr-staff-1'
+            : isBloodTrolley
+              ? 'bt-staff-1'
+              : 'st-staff-1',
         staffName: sectionMeta?.staffName ?? defaultInspector,
-        role: isProcedureTrolley ? 'Staff Nurse / Trolley Lead' : 'Staff Nurse / Store Lead',
+        role: isProcedureTrolley
+          ? 'Staff Nurse / Trolley Lead'
+          : isPrepRoom
+            ? 'Staff Nurse / CCU & SD Lead'
+            : isBloodTrolley
+              ? 'Staff Nurse / Trolley Lead'
+              : 'Staff Nurse / Store Lead',
         assignedSections: isProcedureTrolley
           ? 'All Procedure Trolley Items (No. 1–42)'
-          : 'All Store Categories',
+          : isPrepRoom
+            ? 'CCU & SD Preparation Room Checklists'
+            : isBloodTrolley
+              ? 'All Drawers (1st – 4th Drawer)'
+              : 'All Store Categories',
         checkedDate: sectionMeta?.date || slashDate,
         signature: sectionMeta?.signature || '',
       },
     ];
-  }, [sectionMeta, defaultInspector, today, isProcedureTrolley]);
+  }, [sectionMeta, defaultInspector, today, isProcedureTrolley, isPrepRoom, isBloodTrolley]);
 
   const syncSectionStaffList = (nextList: StoreStaffAssignment[]) => {
     if (!onUpdateSectionMeta) return;
@@ -252,7 +311,9 @@ export function InventoryModuleView({
     const next: StoreStaffAssignment[] = [
       ...sectionStaffAssignments,
       {
-        id: `${isProcedureTrolley ? 'pt' : 'st'}-staff-${Date.now().toString(36)}`,
+        id: `${
+          isProcedureTrolley ? 'pt' : isPrepRoom ? 'pr' : isBloodTrolley ? 'bt' : 'st'
+        }-staff-${Date.now().toString(36)}`,
         staffName: '',
         role: 'Staff Nurse',
         assignedSections: '',
@@ -269,23 +330,55 @@ export function InventoryModuleView({
   };
 
   const openAdd = (presetStoreSection?: string) => {
+    const defaultPrepUnit: 'CCU' | 'SD' = unitFilter === 'SD' ? 'SD' : 'CCU';
     setEditingItem(null);
     setFormName('');
-    setFormUnit(category.supportsUnitSplit ? 'CCU' : 'General Ward');
+    setFormUnit(
+      isPrepRoom || isBloodTrolley
+        ? defaultPrepUnit
+        : category.supportsUnitSplit
+          ? 'CCU'
+          : 'General Ward'
+    );
     setFormLocation(
       isStore
         ? presetStoreSection ||
             (storeSectionFilter !== 'All' ? storeSectionFilter : STORE_SECTIONS[0])
         : isProcedureTrolley
           ? `No. ${categoryItems.length + 1}`
-          : ''
+          : isPrepRoom
+            ? `${defaultPrepUnit} Prep Room #${String(
+                categoryItems.filter((it) => it.unit === defaultPrepUnit).length + 1
+              ).padStart(2, '0')}`
+            : isBloodTrolley
+              ? bloodTrolleyDrawerFilter !== 'All'
+                ? bloodTrolleyDrawerFilter
+                : BLOOD_TROLLEY_DRAWERS[0]
+              : ''
     );
-    setFormQty(category.isEquipment ? 1 : isStore ? 0 : isProcedureTrolley ? 1 : 10);
-    setFormPar(category.isEquipment ? 1 : isStore ? 0 : isProcedureTrolley ? 1 : 10);
+    setFormQty(
+      category.isEquipment
+        ? 1
+        : isStore
+          ? 0
+          : isProcedureTrolley || isPrepRoom || isBloodTrolley
+            ? 1
+            : 10
+    );
+    setFormPar(
+      category.isEquipment
+        ? 1
+        : isStore
+          ? 0
+          : isProcedureTrolley || isPrepRoom || isBloodTrolley
+            ? 1
+            : 10
+    );
     setFormUom(category.isEquipment ? 'unit' : 'pcs');
-    setFormBatch('');
+    setFormBatch(isPrepRoom && defaultPrepUnit === 'CCU' ? 'CSSD' : '');
     setFormOtherCode('');
     setFormExpiry('');
+    setFormExpiryDisplay('');
     setFormSecondExpiry('');
     setFormEqStatus('Operational');
     setFormNextPm('');
@@ -294,6 +387,12 @@ export function InventoryModuleView({
   };
 
   const openEdit = (item: InventoryItem) => {
+    const displayExp =
+      item.expiryDisplay !== undefined
+        ? item.expiryDisplay
+        : item.expiryDate
+          ? item.expiryDate.split('-').reverse().join('/')
+          : '';
     setEditingItem(item);
     setFormName(item.name);
     setFormUnit(item.unit);
@@ -304,6 +403,7 @@ export function InventoryModuleView({
     setFormBatch(item.batchOrSerial);
     setFormOtherCode(item.otherCode || '');
     setFormExpiry(item.expiryDate || '');
+    setFormExpiryDisplay(displayExp);
     setFormSecondExpiry(item.secondExpiryDate || '');
     setFormEqStatus(item.equipmentStatus || 'Operational');
     setFormNextPm(item.nextPmDate || '');
@@ -315,17 +415,26 @@ export function InventoryModuleView({
     e.preventDefault();
     if (!formName.trim()) return;
 
+    const computedExpiryDate =
+      isPrepRoom || isBloodTrolley
+        ? getEarliestIsoFromExpiryText(formExpiryDisplay)
+        : formExpiry
+          ? formExpiry
+          : null;
+
     const payload: Omit<InventoryItem, 'id'> = {
       categoryId: category.id,
       name: formName.trim(),
-      unit: category.supportsUnitSplit ? formUnit : 'General Ward',
+      unit: category.supportsUnitSplit ? formUnit : isBloodTrolley ? 'CCU' : 'General Ward',
       locationDetail: formLocation.trim() || category.shortLabel,
       quantity: Math.max(0, Number(formQty) || 0),
       parLevel: Math.max(0, Number(formPar) || 0),
       unitOfMeasure: formUom.trim() || 'pcs',
       batchOrSerial: formBatch.trim() || '—',
       otherCode: isStore ? formOtherCode.trim() || undefined : editingItem?.otherCode,
-      expiryDate: formExpiry ? formExpiry : null,
+      expiryDate: computedExpiryDate,
+      expiryDisplay:
+        isPrepRoom || isBloodTrolley ? formExpiryDisplay.trim() : editingItem?.expiryDisplay,
       secondExpiryDate:
         isStore || isProcedureTrolley
           ? formSecondExpiry
@@ -403,107 +512,181 @@ export function InventoryModuleView({
         </div>
 
         {!isTransferBag && !isStore && onUpdateSectionMeta && (
-          <div className="pt-4 border-t border-slate-200 flex flex-wrap items-end justify-between gap-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 max-w-2xl">
-              <div>
+          <div className="pt-4 border-t border-slate-200 space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 max-w-2xl gap-3 flex-1">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                    Ward Number
+                  </label>
+                  <input
+                    type="text"
+                    value={sectionMeta?.wardNumber || ''}
+                    onChange={(e) => onUpdateSectionMeta({ wardNumber: e.target.value })}
+                    placeholder={wardName || 'e.g., 208 / CCU'}
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
+                  <input
+                    type="text"
+                    value={sectionMeta?.month || ''}
+                    onChange={(e) => onUpdateSectionMeta({ month: e.target.value })}
+                    placeholder="e.g., November"
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
+                  <input
+                    type="text"
+                    value={sectionMeta?.year || ''}
+                    onChange={(e) => onUpdateSectionMeta({ year: e.target.value })}
+                    placeholder="2026"
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                </div>
+              </div>
+
+              {(isProcedureTrolley || isPrepRoom || isBloodTrolley) && (
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {(isPrepRoom || isBloodTrolley) && (
+                    <div
+                      className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                      title="Choose which unit checklist to include in printout"
+                    >
+                      {(
+                        [
+                          { id: 'both', label: 'Both (CCU + SD)' },
+                          { id: 'CCU', label: 'CCU Only' },
+                          { id: 'SD', label: 'SD Only' },
+                        ] as const
+                      ).map((opt) => {
+                        const activeScope = isPrepRoom
+                          ? prepRoomPrintScope
+                          : bloodTrolleyPrintScope;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() =>
+                              isPrepRoom
+                                ? setPrepRoomPrintScope(opt.id)
+                                : setBloodTrolleyPrintScope(opt.id)
+                            }
+                            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                              activeScope === opt.id
+                                ? 'bg-white text-slate-900 shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div
+                    className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                    title="Choose printout layout"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        isPrepRoom
+                          ? setPrepRoomPrintLayout('two-per-sheet')
+                          : isBloodTrolley
+                            ? setBloodTrolleyPrintLayout('two-per-sheet')
+                            : setTrolleyPrintLayout('two-per-sheet')
+                      }
+                      className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                        (isPrepRoom
+                          ? prepRoomPrintLayout
+                          : isBloodTrolley
+                            ? bloodTrolleyPrintLayout
+                            : trolleyPrintLayout) === 'two-per-sheet'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {isBloodTrolley ? '2 Tables / Page' : '2 Tables / Sheet'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        isPrepRoom
+                          ? setPrepRoomPrintLayout('one-per-sheet')
+                          : isBloodTrolley
+                            ? setBloodTrolleyPrintLayout('one-per-sheet')
+                            : setTrolleyPrintLayout('one-per-sheet')
+                      }
+                      className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                        (isPrepRoom
+                          ? prepRoomPrintLayout
+                          : isBloodTrolley
+                            ? bloodTrolleyPrintLayout
+                            : trolleyPrintLayout) === 'one-per-sheet'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {isBloodTrolley ? '1 Table / Page' : '1 Table / Sheet'}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('editor')}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                        viewMode === 'editor'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <FileEdit className="w-3.5 h-3.5" />
+                      Edit List
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('print-preview')}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                        viewMode === 'print-preview'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Print Preview
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Print Checklist (A4)
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isPrepRoom && (
+              <div className="max-w-3xl">
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Ward Number
+                  CCU Checklist Comments (printed at bottom of CCU form)
                 </label>
                 <input
                   type="text"
-                  value={sectionMeta?.wardNumber || ''}
-                  onChange={(e) => onUpdateSectionMeta({ wardNumber: e.target.value })}
-                  placeholder="e.g., 208 / CCU"
+                  value={sectionMeta?.comments ?? ''}
+                  onChange={(e) => onUpdateSectionMeta({ comments: e.target.value })}
+                  placeholder="Expired items were sent to CSSD Department."
                   className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                 />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
-                <input
-                  type="text"
-                  value={sectionMeta?.month || ''}
-                  onChange={(e) => onUpdateSectionMeta({ month: e.target.value })}
-                  placeholder="e.g., November"
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
-                <input
-                  type="text"
-                  value={sectionMeta?.year || ''}
-                  onChange={(e) => onUpdateSectionMeta({ year: e.target.value })}
-                  placeholder="2026"
-                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                />
-              </div>
-            </div>
-
-            {isProcedureTrolley && (
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <div
-                  className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
-                  title="Choose Procedure Trolley printout layout"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setTrolleyPrintLayout('two-per-sheet')}
-                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                      trolleyPrintLayout === 'two-per-sheet'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    2 Tables / Sheet
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTrolleyPrintLayout('one-per-sheet')}
-                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                      trolleyPrintLayout === 'one-per-sheet'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    1 Table / Sheet
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('editor')}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                      viewMode === 'editor'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <FileEdit className="w-3.5 h-3.5" />
-                    Edit List
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('print-preview')}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                      viewMode === 'print-preview'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    Print Preview
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  Print Checklist (A4)
-                </button>
               </div>
             )}
           </div>
@@ -714,8 +897,8 @@ export function InventoryModuleView({
         )}
       </div>
 
-      {/* Assigned Staff Card for Store Items & Procedure Trolley */}
-      {(isStore || isProcedureTrolley) && viewMode === 'editor' && (
+      {/* Assigned Staff Card for Store Items, Procedure Trolley, Prep Room & Blood Collection Trolley */}
+      {(isStore || isProcedureTrolley || isPrepRoom || isBloodTrolley) && viewMode === 'editor' && (
         <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -725,7 +908,11 @@ export function InventoryModuleView({
                   <h3 className="text-sm font-semibold text-slate-900">
                     {isProcedureTrolley
                       ? 'Assigned Staff (Procedure Trolley Checklist)'
-                      : 'Assigned Staff (Monthly Store Checklist)'}
+                      : isPrepRoom
+                        ? 'Assigned Staff (Preparation Room Checklists)'
+                        : isBloodTrolley
+                          ? 'Assigned Staff (Blood Collection Trolley Checklist)'
+                          : 'Assigned Staff (Monthly Store Checklist)'}
                   </h3>
                   <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                     {sectionStaffAssignments.filter((s) => s.staffName.trim()).length} /{' '}
@@ -735,7 +922,11 @@ export function InventoryModuleView({
                 <p className="text-xs text-slate-500 mt-0.5">
                   {isProcedureTrolley
                     ? 'Assign one or more ward staff members to check Procedure Trolley items. All assigned staff appear on the printed checklist sign-off block.'
-                    : 'Assign one or more ward staff members to check Store categories. All assigned staff appear on the printed GH/NUR/2025-19 sign-off block.'}
+                    : isPrepRoom
+                      ? 'Assign one or more ward staff members to check CCU and SD Preparation Room items. All assigned staff appear on the printed checklist sign-off block.'
+                      : isBloodTrolley
+                        ? 'Assign one or more ward staff members to check Blood Collection Trolley drawers. All assigned staff appear on the printed checklist sign-off block.'
+                        : 'Assign one or more ward staff members to check Store categories. All assigned staff appear on the printed GH/NUR/2025-19 sign-off block.'}
                 </p>
               </div>
             </div>
@@ -758,7 +949,13 @@ export function InventoryModuleView({
                   <th className="py-2 px-2.5 min-w-[170px]">Staff Name</th>
                   <th className="py-2 px-2.5 min-w-[140px]">Role</th>
                   <th className="py-2 px-2.5 min-w-[210px]">
-                    {isProcedureTrolley ? 'Assigned Rows / Scope' : 'Assigned Categories'}
+                    {isProcedureTrolley
+                      ? 'Assigned Rows / Scope'
+                      : isPrepRoom
+                        ? 'Assigned Room / Scope'
+                        : isBloodTrolley
+                          ? 'Assigned Drawers / Scope'
+                          : 'Assigned Categories'}
                   </th>
                   <th className="py-2 px-2.5 w-32 text-center">Date Checked</th>
                   <th className="py-2 px-2.5 w-36 text-center">Signature</th>
@@ -786,9 +983,11 @@ export function InventoryModuleView({
                         value={st.role}
                         onChange={(e) => updateSectionStaffField(idx, 'role', e.target.value)}
                         placeholder={
-                          isProcedureTrolley
+                          isProcedureTrolley || isBloodTrolley
                             ? 'e.g., Staff Nurse / Trolley Lead'
-                            : 'e.g., Staff Nurse / Storekeeper'
+                            : isPrepRoom
+                              ? 'e.g., Staff Nurse / CCU or SD Lead'
+                              : 'e.g., Staff Nurse / Storekeeper'
                         }
                         className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
                       />
@@ -803,7 +1002,11 @@ export function InventoryModuleView({
                         placeholder={
                           isProcedureTrolley
                             ? 'e.g., All Items (No. 1–42)'
-                            : 'e.g., Surgical Disposable & Dressing'
+                            : isPrepRoom
+                              ? 'e.g., CCU Prep Room (No. 1–38) / SD Prep Room'
+                              : isBloodTrolley
+                                ? 'e.g., CCU / SD — All Drawers (1st – 4th Drawer)'
+                                : 'e.g., Surgical Disposable & Dressing'
                         }
                         className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
                       />
@@ -1176,14 +1379,20 @@ export function InventoryModuleView({
       ) : (
         <div
           className={`no-print bg-white border border-slate-200 rounded-lg ${
-            (isTransferBag || isProcedureTrolley) && viewMode === 'print-preview' ? 'hidden' : ''
+            (isTransferBag || isProcedureTrolley || isPrepRoom || isBloodTrolley) &&
+            viewMode === 'print-preview'
+              ? 'hidden'
+              : ''
           }`}
         >
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-3">
               {category.supportsUnitSplit && (
                 <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                  {(['All', 'CCU', 'SD', 'General Ward'] as const).map((unit) => (
+                  {(isPrepRoom || isBloodTrolley
+                    ? (['All', 'CCU', 'SD'] as const)
+                    : (['All', 'CCU', 'SD', 'General Ward'] as const)
+                  ).map((unit) => (
                     <button
                       key={unit}
                       type="button"
@@ -1195,6 +1404,36 @@ export function InventoryModuleView({
                       }`}
                     >
                       {unit === 'All' ? 'All Units' : unit}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {isBloodTrolley && (
+                <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setBloodTrolleyDrawerFilter('All')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      bloodTrolleyDrawerFilter === 'All'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    All Drawers ({bloodTrolleyUnitTotal})
+                  </button>
+                  {bloodTrolleyDrawers.map((dr) => (
+                    <button
+                      key={dr.name}
+                      type="button"
+                      onClick={() => setBloodTrolleyDrawerFilter(dr.name)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        bloodTrolleyDrawerFilter === dr.name
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {dr.name} ({dr.count})
                     </button>
                   ))}
                 </div>
@@ -1394,6 +1633,34 @@ export function InventoryModuleView({
                               </div>
                             )}
                           </div>
+                        ) : isPrepRoom || isBloodTrolley ? (
+                          <div>
+                            <div className="font-mono tabular-nums text-slate-900 max-w-[210px] whitespace-normal">
+                              {item.expiryDisplay?.trim()
+                                ? item.expiryDisplay
+                                : item.expiryDate
+                                  ? formatShortDate(item.expiryDate)
+                                  : '—'}
+                            </div>
+                            {exp.state !== 'none' && (
+                              <div
+                                className={`text-[11px] font-medium inline-flex items-center gap-1 ${
+                                  exp.state === 'expired'
+                                    ? 'text-rose-700'
+                                    : exp.state === 'expiring-soon'
+                                      ? 'text-amber-700'
+                                      : 'text-emerald-700'
+                                }`}
+                              >
+                                {exp.state === 'expired' && <XCircle className="w-3 h-3" />}
+                                {exp.state === 'expiring-soon' && (
+                                  <AlertTriangle className="w-3 h-3" />
+                                )}
+                                {exp.state === 'valid' && <CheckCircle2 className="w-3 h-3" />}
+                                <span className="tabular-nums">{exp.label}</span>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <div>
                             <div className="font-mono tabular-nums text-slate-900">
@@ -1511,6 +1778,46 @@ export function InventoryModuleView({
         </div>
       )}
 
+      {/* Official Preparation Room Expiry Checklists Printable Forms (CCU & SD) */}
+      {isPrepRoom && (
+        <div
+          className={
+            viewMode === 'print-preview'
+              ? 'block overflow-x-auto pb-4'
+              : 'hidden print-only-block'
+          }
+        >
+          <PrepRoomPrintView
+            items={categoryItems}
+            meta={sectionMeta}
+            wardName={wardName}
+            defaultInspector={defaultInspector}
+            printScope={prepRoomPrintScope}
+            layoutMode={prepRoomPrintLayout}
+          />
+        </div>
+      )}
+
+      {/* Official Ward Blood Collection Trolley Expiry Checklist Printable Form */}
+      {isBloodTrolley && (
+        <div
+          className={
+            viewMode === 'print-preview'
+              ? 'block overflow-x-auto pb-4'
+              : 'hidden print-only-block'
+          }
+        >
+          <BloodTrolleyPrintView
+            items={categoryItems}
+            meta={sectionMeta}
+            wardName={wardName}
+            defaultInspector={defaultInspector}
+            printScope={bloodTrolleyPrintScope}
+            layoutMode={bloodTrolleyPrintLayout}
+          />
+        </div>
+      )}
+
       {/* Official Monthly Store Checklist Printable Form (GH/NUR/2025-19) */}
       {isStore && (
         <div
@@ -1595,20 +1902,30 @@ export function InventoryModuleView({
                     >
                       <option value="CCU">CCU</option>
                       <option value="SD">SD</option>
-                      <option value="General Ward">General Ward</option>
+                      {!(isPrepRoom || isBloodTrolley) && (
+                        <option value="General Ward">General Ward</option>
+                      )}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Specific Location / Drawer
+                      {isBloodTrolley ? 'Drawer (1st – 4th Drawer)' : 'Specific Location / Drawer'}
                     </label>
                     <input
                       type="text"
+                      list={isBloodTrolley ? 'blood-trolley-drawer-options' : undefined}
                       value={formLocation}
                       onChange={(e) => setFormLocation(e.target.value)}
-                      placeholder="e.g., Drawer 2 / Shelf A"
+                      placeholder={isBloodTrolley ? 'e.g., 1st Drawer' : 'e.g., Drawer 2 / Shelf A'}
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                     />
+                    {isBloodTrolley && (
+                      <datalist id="blood-trolley-drawer-options">
+                        {BLOOD_TROLLEY_DRAWERS.map((dr) => (
+                          <option key={dr} value={dr} />
+                        ))}
+                      </datalist>
+                    )}
                   </div>
                 </div>
               ) : isStore ? (
@@ -1635,19 +1952,31 @@ export function InventoryModuleView({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     {isProcedureTrolley
                       ? 'Checklist Row No. (e.g., No. 17 or No. 43)'
-                      : 'Specific Location / Drawer'}
+                      : isBloodTrolley
+                        ? 'Drawer (1st – 4th Drawer)'
+                        : 'Specific Location / Drawer'}
                   </label>
                   <input
                     type="text"
+                    list={isBloodTrolley ? 'blood-trolley-drawer-options' : undefined}
                     value={formLocation}
                     onChange={(e) => setFormLocation(e.target.value)}
                     placeholder={
                       isProcedureTrolley
                         ? 'e.g., No. 17'
-                        : 'e.g., Front Pocket / Main Compartment'
+                        : isBloodTrolley
+                          ? 'e.g., 1st Drawer'
+                          : 'e.g., Front Pocket / Main Compartment'
                     }
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                   />
+                  {isBloodTrolley && (
+                    <datalist id="blood-trolley-drawer-options">
+                      {BLOOD_TROLLEY_DRAWERS.map((dr) => (
+                        <option key={dr} value={dr} />
+                      ))}
+                    </datalist>
+                  )}
                 </div>
               )}
 
@@ -1756,14 +2085,28 @@ export function InventoryModuleView({
                     )}
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        {isStore || isProcedureTrolley ? 'Expiry Date 1' : 'Expiry Date'}
+                        {isStore || isProcedureTrolley
+                          ? 'Expiry Date 1'
+                          : isPrepRoom || isBloodTrolley
+                            ? 'Expiry Date (Text / Multi-Date)'
+                            : 'Expiry Date'}
                       </label>
-                      <input
-                        type="date"
-                        value={formExpiry}
-                        onChange={(e) => setFormExpiry(e.target.value)}
-                        className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                      />
+                      {isPrepRoom || isBloodTrolley ? (
+                        <input
+                          type="text"
+                          value={formExpiryDisplay}
+                          onChange={(e) => setFormExpiryDisplay(e.target.value)}
+                          placeholder="e.g., 9/2030, 10/29 or 16/8/2030 or NIL"
+                          className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                        />
+                      ) : (
+                        <input
+                          type="date"
+                          value={formExpiry}
+                          onChange={(e) => setFormExpiry(e.target.value)}
+                          className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                        />
+                      )}
                     </div>
                     {(isStore || isProcedureTrolley) && (
                       <div>
