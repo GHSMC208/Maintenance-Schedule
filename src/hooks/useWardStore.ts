@@ -20,6 +20,7 @@ import type {
   WeeklyStockFormId,
 } from '../types/ward';
 import { addDaysIso, addMonthsIso, getTodayIso } from '../utils/dateUtils';
+import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
 
 const STORAGE_KEY = 'wardcare_schedule_store_v1';
 
@@ -30,23 +31,25 @@ function loadInitialStore(): WardStoreData {
       const parsed = JSON.parse(raw) as WardStoreData;
       if (parsed && Array.isArray(parsed.tasks) && Array.isArray(parsed.inventory)) {
         const initial = createInitialWardData();
+        const hydratedCrashCarts =
+          Array.isArray(parsed.crashCarts) && parsed.crashCarts.length > 0
+            ? parsed.crashCarts
+            : initial.crashCarts;
+        const rawPharmacyForms = parsed.pharmacyForms
+          ? {
+              ...createInitialPharmacyForms(),
+              ...parsed.pharmacyForms,
+              weeklyForms: {
+                ...createInitialPharmacyForms().weeklyForms,
+                ...(parsed.pharmacyForms.weeklyForms || {}),
+              },
+            }
+          : initial.pharmacyForms;
         return {
           ...initial,
           ...parsed,
-          crashCarts:
-            Array.isArray(parsed.crashCarts) && parsed.crashCarts.length > 0
-              ? parsed.crashCarts
-              : initial.crashCarts,
-          pharmacyForms: parsed.pharmacyForms
-            ? {
-                ...createInitialPharmacyForms(),
-                ...parsed.pharmacyForms,
-                weeklyForms: {
-                  ...createInitialPharmacyForms().weeklyForms,
-                  ...(parsed.pharmacyForms.weeklyForms || {}),
-                },
-              }
-            : initial.pharmacyForms,
+          crashCarts: hydratedCrashCarts,
+          pharmacyForms: syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts),
         };
       }
     }
@@ -370,10 +373,14 @@ export function useWardStore() {
 
   // --- Crash Cart Weekly Checklists ---
   const updateCrashCart = (cartId: string, patch: Partial<CrashCartChecklist>) => {
-    setData((prev) => ({
-      ...prev,
-      crashCarts: prev.crashCarts.map((c) => (c.id === cartId ? { ...c, ...patch } : c)),
-    }));
+    setData((prev) => {
+      const nextCarts = prev.crashCarts.map((c) => (c.id === cartId ? { ...c, ...patch } : c));
+      return {
+        ...prev,
+        crashCarts: nextCarts,
+        pharmacyForms: syncNearExpiryInPharmacyForms(prev.pharmacyForms, nextCarts),
+      };
+    });
   };
 
   const updateCrashCartItemSlot = (
@@ -382,9 +389,8 @@ export function useWardStore() {
     slotIdx: number,
     value: string
   ) => {
-    setData((prev) => ({
-      ...prev,
-      crashCarts: prev.crashCarts.map((c) => {
+    setData((prev) => {
+      const nextCarts = prev.crashCarts.map((c) => {
         if (c.id !== cartId) return c;
         return {
           ...c,
@@ -395,8 +401,13 @@ export function useWardStore() {
             return { ...it, slots: nextSlots };
           }),
         };
-      }),
-    }));
+      });
+      return {
+        ...prev,
+        crashCarts: nextCarts,
+        pharmacyForms: syncNearExpiryInPharmacyForms(prev.pharmacyForms, nextCarts),
+      };
+    });
   };
 
   const addCrashCart = (defibLabel: string) => {
@@ -416,70 +427,110 @@ export function useWardStore() {
       headNurseName: '',
       staffCommentsContinued: '',
     };
-    setData((prev) => ({
-      ...prev,
-      crashCarts: [...prev.crashCarts, newCart],
-    }));
+    setData((prev) => {
+      const nextCarts = [...prev.crashCarts, newCart];
+      return {
+        ...prev,
+        crashCarts: nextCarts,
+        pharmacyForms: syncNearExpiryInPharmacyForms(prev.pharmacyForms, nextCarts),
+      };
+    });
     return newCart.id;
   };
 
   // --- Pharmacy & Monthly Store Forms ---
   const updateCadForm = (patch: Partial<CadChecklistForm>) => {
-    setData((prev) => ({
-      ...prev,
-      pharmacyForms: {
+    setData((prev) => {
+      const nextForms = {
         ...prev.pharmacyForms,
         cad: { ...prev.pharmacyForms.cad, ...patch },
-      },
-    }));
+      };
+      return {
+        ...prev,
+        pharmacyForms: syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts),
+      };
+    });
   };
 
   const updateWeeklyStockForm = (
     formId: WeeklyStockFormId,
     patch: Partial<WeeklyStockChecklistForm>
   ) => {
-    setData((prev) => ({
-      ...prev,
-      pharmacyForms: {
+    setData((prev) => {
+      const nextForms = {
         ...prev.pharmacyForms,
         weeklyForms: {
           ...prev.pharmacyForms.weeklyForms,
           [formId]: { ...prev.pharmacyForms.weeklyForms[formId], ...patch },
         },
-      },
-    }));
+      };
+      return {
+        ...prev,
+        pharmacyForms:
+          formId === 'near-expiry'
+            ? nextForms
+            : syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts),
+      };
+    });
   };
 
   const updateMonthlyStoreForm = (patch: Partial<MonthlyStoreChecklistForm>) => {
-    setData((prev) => ({
-      ...prev,
-      pharmacyForms: {
+    setData((prev) => {
+      const nextForms = {
         ...prev.pharmacyForms,
         monthlyStore: { ...prev.pharmacyForms.monthlyStore, ...patch },
-      },
+      };
+      return {
+        ...prev,
+        pharmacyForms: syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts),
+      };
+    });
+  };
+
+  const setAutoSyncNearExpiry = (enabled: boolean) => {
+    setData((prev) => {
+      const updated = {
+        ...prev.pharmacyForms,
+        autoSyncNearExpiry: enabled,
+      };
+      return {
+        ...prev,
+        pharmacyForms: enabled
+          ? syncNearExpiryInPharmacyForms(updated, prev.crashCarts, true)
+          : updated,
+      };
+    });
+  };
+
+  const resyncNearExpiry = () => {
+    setData((prev) => ({
+      ...prev,
+      pharmacyForms: syncNearExpiryInPharmacyForms(prev.pharmacyForms, prev.crashCarts, true),
     }));
   };
 
   // --- Backup & Reset ---
   const importBackupData = (imported: WardStoreData) => {
     const initial = createInitialWardData();
+    const nextCarts =
+      Array.isArray(imported.crashCarts) && imported.crashCarts.length > 0
+        ? imported.crashCarts
+        : initial.crashCarts;
+    const rawForms = imported.pharmacyForms
+      ? {
+          ...createInitialPharmacyForms(),
+          ...imported.pharmacyForms,
+          weeklyForms: {
+            ...createInitialPharmacyForms().weeklyForms,
+            ...(imported.pharmacyForms.weeklyForms || {}),
+          },
+        }
+      : initial.pharmacyForms;
     setData({
       ...initial,
       ...imported,
-      crashCarts:
-        Array.isArray(imported.crashCarts) && imported.crashCarts.length > 0
-          ? imported.crashCarts
-          : initial.crashCarts,
-      pharmacyForms: imported.pharmacyForms
-        ? {
-            ...createInitialPharmacyForms(),
-            ...imported.pharmacyForms,
-            weeklyForms: {
-              ...createInitialPharmacyForms().weeklyForms,
-              ...(imported.pharmacyForms.weeklyForms || {}),
-            },
-          }
-        : initial.pharmacyForms,
+      crashCarts: nextCarts,
+      pharmacyForms: syncNearExpiryInPharmacyForms(rawForms, nextCarts),
       lastBackupDate: getTodayIso(),
     });
   };
@@ -519,6 +570,8 @@ export function useWardStore() {
     updateCadForm,
     updateWeeklyStockForm,
     updateMonthlyStoreForm,
+    setAutoSyncNearExpiry,
+    resyncNearExpiry,
     importBackupData,
     markBackupDone,
     resetToInitialData,

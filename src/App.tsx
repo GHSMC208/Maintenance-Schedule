@@ -50,6 +50,8 @@ export default function App() {
     updateCadForm,
     updateWeeklyStockForm,
     updateMonthlyStoreForm,
+    setAutoSyncNearExpiry,
+    resyncNearExpiry,
     importBackupData,
     markBackupDone,
     resetToInitialData,
@@ -279,12 +281,15 @@ export default function App() {
             {activeNav === 'pharmacy-forms' && (
               <PharmacyFormsView
                 forms={data.pharmacyForms}
+                crashCarts={data.crashCarts}
                 inventory={data.inventory}
                 wardName={data.wardName}
                 defaultInspector={data.defaultInspector}
                 onUpdateCad={updateCadForm}
                 onUpdateWeeklyForm={updateWeeklyStockForm}
                 onUpdateMonthlyStore={updateMonthlyStoreForm}
+                onToggleAutoSyncNearExpiry={setAutoSyncNearExpiry}
+                onResyncNearExpiry={resyncNearExpiry}
               />
             )}
 

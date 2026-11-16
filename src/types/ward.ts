@@ -242,6 +242,7 @@ export interface MonthlyStoreChecklistForm {
 }
 
 export interface PharmacyFormsState {
+  autoSyncNearExpiry?: boolean;
   cad: CadChecklistForm;
   weeklyForms: Record<WeeklyStockFormId, WeeklyStockChecklistForm>;
   monthlyStore: MonthlyStoreChecklistForm;

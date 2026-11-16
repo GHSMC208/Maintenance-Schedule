@@ -1,9 +1,10 @@
-import { Eye, FileEdit, Plus, Printer, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { Eye, FileEdit, Plus, Printer, RefreshCw, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
 import type {
   CadChecklistForm,
   CadDrugRow,
+  CrashCartChecklist,
   InventoryItem,
   MonthlyStoreChecklistForm,
   MonthlyStoreRow,
@@ -13,6 +14,7 @@ import type {
   WeeklyStockRow,
 } from '../types/ward';
 import { getCrashCartSlotExpirySeverity, getExpiryStatus, getTodayIso } from '../utils/dateUtils';
+import { AUTO_NEAR_PREFIX, collectNearExpiryCandidates } from '../utils/nearExpirySync';
 import {
   CAD_ROWS_PER_PAGE,
   CadPrintPage,
@@ -26,6 +28,7 @@ type ActivePharmacyFormId = 'cad' | WeeklyStockFormId | 'monthly-store';
 
 interface PharmacyFormsViewProps {
   forms: PharmacyFormsState;
+  crashCarts: CrashCartChecklist[];
   inventory: InventoryItem[];
   wardName: string;
   defaultInspector: string;
@@ -35,6 +38,8 @@ interface PharmacyFormsViewProps {
     patch: Partial<WeeklyStockChecklistForm>
   ) => void;
   onUpdateMonthlyStore: (patch: Partial<MonthlyStoreChecklistForm>) => void;
+  onToggleAutoSyncNearExpiry: (enabled: boolean) => void;
+  onResyncNearExpiry: () => void;
 }
 
 const FORM_TABS: { id: ActivePharmacyFormId; label: string; orientation: 'Landscape' | 'Portrait'; code: string }[] = [
@@ -48,12 +53,15 @@ const FORM_TABS: { id: ActivePharmacyFormId; label: string; orientation: 'Landsc
 
 export function PharmacyFormsView({
   forms,
+  crashCarts,
   inventory,
   wardName,
   defaultInspector,
   onUpdateCad,
   onUpdateWeeklyForm,
   onUpdateMonthlyStore,
+  onToggleAutoSyncNearExpiry,
+  onResyncNearExpiry,
 }: PharmacyFormsViewProps) {
   const [activeForm, setActiveForm] = useState<ActivePharmacyFormId>('cad');
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
@@ -61,6 +69,18 @@ export function PharmacyFormsView({
   const today = getTodayIso();
   const activeTabMeta = FORM_TABS.find((t) => t.id === activeForm)!;
   const isLandscape = activeTabMeta.orientation === 'Landscape';
+  const isAutoSyncOn = forms.autoSyncNearExpiry !== false;
+
+  const nearExpiryStats = useMemo(() => {
+    const candidates = collectNearExpiryCandidates(forms, crashCarts, today);
+    let crashCartCount = 0;
+    let pharmacyCount = 0;
+    for (const c of candidates) {
+      if (c.sourceType === 'crash-cart') crashCartCount += 1;
+      else pharmacyCount += 1;
+    }
+    return { total: candidates.length, crashCartCount, pharmacyCount };
+  }, [forms, crashCarts, today]);
 
   const makeBlankCadRow = (offset = 0): CadDrugRow => ({
     id: `cad-r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${offset}`,
@@ -183,6 +203,59 @@ export function PharmacyFormsView({
       sourceItems = inventory.filter((it) => it.categoryId === 'iv-meds');
     }
 
+    if (activeForm === 'near-expiry') {
+      const wardExpiring = inventory.filter((it) => {
+        const st = getExpiryStatus(it.expiryDate, today);
+        return st.state === 'expired' || st.state === 'expiring-soon';
+      });
+      const existingPopulated = wf.rows.filter(
+        (r) => r.id.startsWith(AUTO_NEAR_PREFIX) || r.medicationName.trim() !== ''
+      );
+      const existingNames = new Set(
+        existingPopulated.map((r) => r.medicationName.trim().toLowerCase())
+      );
+
+      const addedWardRows: WeeklyStockRow[] = wardExpiring
+        .filter((src) => !existingNames.has(src.name.trim().toLowerCase()))
+        .map((src, idx) => {
+          const expStr = src.expiryDate ? src.expiryDate.split('-').reverse().join('/') : '';
+          return {
+            id: `near-ward-${src.id}`,
+            slNo: '',
+            medicationName: `${src.name} [Ward Stock]`,
+            wardQuantity: `${src.parLevel} ${src.unitOfMeasure}`,
+            checks: [
+              { qty: String(src.quantity), expDate: expStr },
+              { qty: '', expDate: '' },
+              { qty: '', expDate: '' },
+              { qty: '', expDate: '' },
+              { qty: '', expDate: '' },
+            ],
+          };
+        });
+
+      const merged = [...existingPopulated, ...addedWardRows];
+      const totalLen = Math.max(12, merged.length);
+      const padded = Array.from({ length: totalLen }, (_, idx) => {
+        const row = merged[idx] ?? makeBlankWeeklyRow('near-expiry', '', idx);
+        return {
+          ...row,
+          slNo: row.medicationName.trim() ? String(idx + 1) : '',
+        };
+      });
+
+      const nextDates = [...wf.weekDates];
+      if (!nextDates[0]) nextDates[0] = slashToday;
+
+      onUpdateWeeklyForm('near-expiry', {
+        location: wf.location || wardName,
+        month: wf.month || monthStr,
+        weekDates: nextDates,
+        rows: padded,
+      });
+      return;
+    }
+
     const targetLen = Math.max(wf.rows.length, sourceItems.length);
     const nextRows: WeeklyStockRow[] = Array.from({ length: targetLen }, (_, idx) => {
       const base = wf.rows[idx] ?? makeBlankWeeklyRow(activeForm, String(idx + 1), idx);
@@ -218,6 +291,9 @@ export function PharmacyFormsView({
     } else if (activeForm === 'monthly-store') {
       onUpdateMonthlyStore(fresh.monthlyStore);
     } else {
+      if (activeForm === 'near-expiry' && isAutoSyncOn) {
+        onToggleAutoSyncNearExpiry(false);
+      }
       onUpdateWeeklyForm(activeForm, fresh.weeklyForms[activeForm]);
     }
   };
@@ -316,12 +392,48 @@ export function PharmacyFormsView({
           </div>
         </div>
 
-        <div className="text-xs text-slate-500 flex items-center gap-2">
-          <span className="font-mono">{activeTabMeta.code}</span>
-          <span aria-hidden="true">·</span>
-          <span>A4 {activeTabMeta.orientation} Official Format</span>
-          <span aria-hidden="true">·</span>
-          <span>Auto-saved locally</span>
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <span className="font-mono">{activeTabMeta.code}</span>
+            <span aria-hidden="true">·</span>
+            <span>A4 {activeTabMeta.orientation} Official Format</span>
+            <span aria-hidden="true">·</span>
+            <span>Auto-saved locally</span>
+          </div>
+
+          {activeForm === 'near-expiry' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-600 tabular-nums">
+                Auto-sync {isAutoSyncOn ? 'ON' : 'OFF'}:{' '}
+                <strong className="font-medium text-slate-900">
+                  {nearExpiryStats.crashCartCount} Crash Cart meds
+                </strong>{' '}
+                ·{' '}
+                <strong className="font-medium text-slate-900">
+                  {nearExpiryStats.pharmacyCount} Pharmacy Form items
+                </strong>
+              </span>
+              <button
+                type="button"
+                onClick={onResyncNearExpiry}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Sync Now
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggleAutoSyncNearExpiry(!isAutoSyncOn)}
+                className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors cursor-pointer ${
+                  isAutoSyncOn
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {isAutoSyncOn ? 'Auto-Sync: On' : 'Auto-Sync: Off'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

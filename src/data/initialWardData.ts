@@ -1,5 +1,6 @@
 import type { CategoryMeta, WardStoreData } from '../types/ward';
 import { addDaysIso, getTodayIso } from '../utils/dateUtils';
+import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
 import { createInitialCrashCarts } from './crashCartSeed';
 import { createInitialPharmacyForms } from './pharmacyFormsSeed';
 
@@ -58,13 +59,18 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
 
 export function createInitialWardData(): WardStoreData {
   const today = getTodayIso();
+  const crashCarts = createInitialCrashCarts();
+  const pharmacyForms = syncNearExpiryInPharmacyForms(
+    createInitialPharmacyForms(),
+    crashCarts
+  );
 
   return {
     wardName: 'Cardiac Care (CCU) & Step-Down (SD) Ward',
     defaultInspector: 'RN Sara Al-Mansoor',
     customCategories: [],
-    crashCarts: createInitialCrashCarts(),
-    pharmacyForms: createInitialPharmacyForms(),
+    crashCarts,
+    pharmacyForms,
     lastBackupDate: null,
     tasks: [
       {
