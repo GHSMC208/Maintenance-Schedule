@@ -5,12 +5,14 @@ import { CrashCartView } from './components/CrashCartView';
 import { DataReportModal } from './components/DataReportModal';
 import { EnvironmentalRoundView } from './components/EnvironmentalRoundView';
 import { InventoryModuleView } from './components/InventoryModuleView';
+import { IvMedsModuleView } from './components/IvMedsModuleView';
 import { MaintenanceFollowUpView } from './components/MaintenanceFollowUpView';
 import { OverviewScheduleView } from './components/OverviewScheduleView';
 import { OxygenCylinderView } from './components/OxygenCylinderView';
 import { PharmacyFormsView } from './components/PharmacyFormsView';
 import { type NavSectionId, Sidebar } from './components/Sidebar';
 import { CORE_CATEGORIES } from './data/initialWardData';
+import { createInitialIvMedsAuditMeta } from './data/ivMedsSeed';
 import { useWardStore } from './hooks/useWardStore';
 import {
   daysBetween,
@@ -56,6 +58,9 @@ export default function App() {
     setAutoSyncNearExpiry,
     resyncNearExpiry,
     updateTransferBagMeta,
+    updateIvMedsAuditMeta,
+    updateSectionMeta,
+    resyncIvMedsFromForms,
     importBackupData,
     markBackupDone,
     resetToInitialData,
@@ -300,7 +305,26 @@ export default function App() {
               />
             )}
 
-            {activeCategory && (
+            {activeCategory && activeCategory.id === 'iv-meds' && (
+              <IvMedsModuleView
+                key={activeCategory.id}
+                category={activeCategory}
+                items={data.inventory}
+                auditMeta={data.ivMedsAuditMeta || createInitialIvMedsAuditMeta(today)}
+                monthlyTask={data.tasks.find((t) => t.id === 'tsk-08')}
+                wardName={data.wardName}
+                defaultInspector={data.defaultInspector}
+                onAddItem={addInventoryItem}
+                onUpdateItem={updateInventoryItem}
+                onDeleteItem={deleteInventoryItem}
+                onVerifyItem={verifyInventoryItem}
+                onUpdateAuditMeta={updateIvMedsAuditMeta}
+                onResyncFromForms={resyncIvMedsFromForms}
+                onCompleteMonthlyTask={completeTaskAndAdvance}
+              />
+            )}
+
+            {activeCategory && activeCategory.id !== 'iv-meds' && (
               <InventoryModuleView
                 key={activeCategory.id}
                 category={activeCategory}
@@ -308,6 +332,8 @@ export default function App() {
                 defaultInspector={data.defaultInspector}
                 transferBagMeta={data.transferBagMeta}
                 onUpdateTransferBagMeta={updateTransferBagMeta}
+                sectionMeta={data.sectionMeta?.[activeCategory.id]}
+                onUpdateSectionMeta={(patch) => updateSectionMeta(activeCategory.id, patch)}
                 onAddItem={addInventoryItem}
                 onUpdateItem={updateInventoryItem}
                 onDeleteItem={deleteInventoryItem}
@@ -319,6 +345,8 @@ export default function App() {
               <EnvironmentalRoundView
                 checks={data.environmentalChecks}
                 defaultInspector={data.defaultInspector}
+                sectionMeta={data.sectionMeta?.environmental}
+                onUpdateSectionMeta={(patch) => updateSectionMeta('environmental', patch)}
                 onUpdateCheck={updateEnvironmentalCheck}
                 onAddCheck={addEnvironmentalCheck}
               />

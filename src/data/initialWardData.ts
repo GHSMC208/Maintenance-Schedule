@@ -1,7 +1,11 @@
-import type { CategoryMeta, WardStoreData } from '../types/ward';
+import type { CategoryMeta, SectionPeriodMeta, WardStoreData } from '../types/ward';
 import { addDaysIso, getTodayIso } from '../utils/dateUtils';
 import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
 import { createInitialCrashCarts } from './crashCartSeed';
+import {
+  createInitialIvMedsAuditMeta,
+  createInitialIvMedsItems,
+} from './ivMedsSeed';
 import { createInitialPharmacyForms } from './pharmacyFormsSeed';
 import {
   createInitialTransferBagItems,
@@ -49,7 +53,8 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
     id: 'iv-meds',
     label: 'Stock IV Fluids & Medications',
     shortLabel: 'IV Fluids & Meds',
-    description: 'Ward stock intravenous fluids, emergency ampoules, high-alert medications, and expiry audit.',
+    description:
+      'Organized lists matching CAD Checklist, High-Alert Meds, Refrigerator Stock, IV Fluids, and Near Expiry — monthly audit assigned to at least 3 ward staff.',
     supportsUnitSplit: true,
   },
   {
@@ -60,6 +65,31 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
     supportsUnitSplit: false,
   },
 ];
+
+export function createDefaultSectionPeriodMeta(today: string): SectionPeriodMeta {
+  const [year, monthNum, day] = today.split('-');
+  const dt = new Date(Number(year), Math.max(0, Number(monthNum) - 1), Number(day));
+  const month = Number.isNaN(dt.getTime())
+    ? ''
+    : dt.toLocaleDateString('en-US', { month: 'long' });
+  return {
+    wardNumber: '',
+    month,
+    year: year || '',
+  };
+}
+
+export function createInitialSectionMeta(today: string): Record<string, SectionPeriodMeta> {
+  const base = createDefaultSectionPeriodMeta(today);
+  return {
+    equipment: { ...base },
+    store: { ...base },
+    'prep-room': { ...base },
+    'blood-trolley': { ...base },
+    'procedure-trolley': { ...base },
+    environmental: { ...base },
+  };
+}
 
 export function createInitialWardData(): WardStoreData {
   const today = getTodayIso();
@@ -76,6 +106,8 @@ export function createInitialWardData(): WardStoreData {
     crashCarts,
     pharmacyForms,
     transferBagMeta: createInitialTransferBagMeta(today),
+    ivMedsAuditMeta: createInitialIvMedsAuditMeta(today),
+    sectionMeta: createInitialSectionMeta(today),
     lastBackupDate: null,
     tasks: [
       {
@@ -171,16 +203,16 @@ export function createInitialWardData(): WardStoreData {
       },
       {
         id: 'tsk-08',
-        title: 'Monthly Stock IV Fluids & High-Alert Medications Expiry Audit',
+        title: 'Monthly Stock IV Fluids & Meds Audit (CAD, High-Alert, Fridge & IV Fluids)',
         category: 'Stock IV Fluids & Meds',
         unit: 'All Units',
         frequency: 'monthly',
         dueDate: addDaysIso(today, -2),
         lastCompletedDate: addDaysIso(today, -32),
-        lastInspector: 'Clinical Pharmacist',
+        lastInspector: 'RN Sara Al-Mansoor, RN Khalid Hassan, RN Nadia Omar',
         status: 'follow-up',
-        assignedRole: 'Charge Nurse & Pharmacy',
-        notes: 'Two boxes of Amiodarone ampoules nearing expiry — replacement order requested.',
+        assignedRole: 'Min. 3 Assigned Staff (Charge Nurse + 2 RNs)',
+        notes: 'Covers CAD Checklist, High-Alert Meds, Refrigerator Stock, and IV Fluids. Amiodarone ampoules expiring soon — replacement ordered.',
       },
       {
         id: 'tsk-09',
@@ -534,67 +566,8 @@ export function createInitialWardData(): WardStoreData {
         notes: 'Chemical sterilization indicators verified.',
       },
 
-      // Stock IV Fluids & Medications
-      {
-        id: 'iv-01',
-        categoryId: 'iv-meds',
-        name: '0.9% Normal Saline IV Bag 1000ml',
-        unit: 'General Ward',
-        locationDetail: 'IV Fluid Rack 1',
-        quantity: 36,
-        parLevel: 30,
-        unitOfMeasure: 'bags',
-        batchOrSerial: 'LOT-NS1L-982',
-        expiryDate: addDaysIso(today, 180),
-        lastCheckedDate: addDaysIso(today, -3),
-        lastCheckedBy: 'RN Khalid Hassan',
-        notes: 'Overwrap intact.',
-      },
-      {
-        id: 'iv-02',
-        categoryId: 'iv-meds',
-        name: 'Amiodarone HCl 150mg/3ml Ampoules',
-        unit: 'CCU',
-        locationDetail: 'CCU Med Cabinet Shelf B',
-        quantity: 10,
-        parLevel: 10,
-        unitOfMeasure: 'amps',
-        batchOrSerial: 'LOT-AMD-553',
-        expiryDate: addDaysIso(today, 11),
-        lastCheckedDate: addDaysIso(today, -2),
-        lastCheckedBy: 'Clinical Pharmacist',
-        notes: 'Replacement stock ordered from central pharmacy.',
-      },
-      {
-        id: 'iv-03',
-        categoryId: 'iv-meds',
-        name: 'Ringer Lactate IV Infusion 500ml',
-        unit: 'SD',
-        locationDetail: 'IV Fluid Rack 2',
-        quantity: 14,
-        parLevel: 20,
-        unitOfMeasure: 'bags',
-        batchOrSerial: 'LOT-RL500-410',
-        expiryDate: addDaysIso(today, 145),
-        lastCheckedDate: addDaysIso(today, -3),
-        lastCheckedBy: 'RN Khalid Hassan',
-        notes: 'Below par level (14/20) — include on daily pharmacy requisition.',
-      },
-      {
-        id: 'iv-04',
-        categoryId: 'iv-meds',
-        name: 'Epinephrine 1mg/1ml (1:1000) Emergency Ampoules',
-        unit: 'CCU',
-        locationDetail: 'Emergency Med Box',
-        quantity: 12,
-        parLevel: 12,
-        unitOfMeasure: 'amps',
-        batchOrSerial: 'LOT-EPI-741',
-        expiryDate: addDaysIso(today, 290),
-        lastCheckedDate: today,
-        lastCheckedBy: 'RN Sara Al-Mansoor',
-        notes: 'High-alert sticker applied.',
-      },
+      // Stock IV Fluids & Medications (CAD, High-Alert, Refrigerator Stock, IV Fluids)
+      ...createInitialIvMedsItems(today),
 
       // Emergency Patient Transfer Bag (Official 28-Item Emergency Bag Checklist)
       ...createInitialTransferBagItems(today),

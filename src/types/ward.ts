@@ -42,9 +42,12 @@ export type EquipmentStatus =
   | 'Under Maintenance'
   | 'Out of Service';
 
+export type IvMedsGroupId = 'cad' | 'high-alert' | 'refrigerator' | 'iv-fluids' | 'near-expiry';
+
 export interface InventoryItem {
   id: string;
   categoryId: string;
+  medGroup?: IvMedsGroupId;
   name: string;
   unit: 'CCU' | 'SD' | 'General Ward';
   locationDetail: string;
@@ -303,6 +306,30 @@ export interface TransferBagChecklistMeta {
   date: string;
 }
 
+export interface IvMedsStaffAssignment {
+  id: string;
+  staffName: string;
+  role: string;
+  assignedLists: string;
+  checkedDate: string;
+  signature: string;
+}
+
+export interface SectionPeriodMeta {
+  wardNumber: string;
+  month: string;
+  year: string;
+}
+
+export interface IvMedsAuditMeta {
+  wardNumber?: string;
+  month?: string;
+  year?: string;
+  monthYear: string;
+  staffAssignments: IvMedsStaffAssignment[];
+  notes: string;
+}
+
 export interface WardStoreData {
   wardName: string;
   defaultInspector: string;
@@ -316,5 +343,7 @@ export interface WardStoreData {
   crashCarts: CrashCartChecklist[];
   pharmacyForms: PharmacyFormsState;
   transferBagMeta?: TransferBagChecklistMeta;
+  ivMedsAuditMeta?: IvMedsAuditMeta;
+  sectionMeta?: Record<string, SectionPeriodMeta>;
   lastBackupDate: string | null;
 }

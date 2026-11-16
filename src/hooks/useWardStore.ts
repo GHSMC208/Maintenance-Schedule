@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { createInitialCrashCarts } from '../data/crashCartSeed';
-import { createInitialWardData } from '../data/initialWardData';
+import {
+  createDefaultSectionPeriodMeta,
+  createInitialSectionMeta,
+  createInitialWardData,
+} from '../data/initialWardData';
+import {
+  createInitialIvMedsAuditMeta,
+  createInitialIvMedsItems,
+} from '../data/ivMedsSeed';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
 import {
   createInitialTransferBagItems,
@@ -12,14 +20,17 @@ import type {
   CrashCartChecklist,
   EnvironmentalCheckItem,
   InventoryItem,
+  IvMedsAuditMeta,
   MaintenanceTicket,
   MonthlyStoreChecklistForm,
   OxygenCheckLog,
   OxygenCylinder,
   PharmacyCatalogItem,
+  PharmacyFormsState,
   PharmacyRequestForm,
   RoundCheckResult,
   ScheduleTask,
+  SectionPeriodMeta,
   TicketStatus,
   TransferBagChecklistMeta,
   WardStoreData,
@@ -27,6 +38,7 @@ import type {
   WeeklyStockFormId,
 } from '../types/ward';
 import { addDaysIso, addMonthsIso, getTodayIso } from '../utils/dateUtils';
+import { syncPharmacyFormItemsIntoIvMeds } from '../utils/ivMedsSync';
 import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
 
 const STORAGE_KEY = 'wardcare_schedule_store_v1';
@@ -42,6 +54,83 @@ function migrateLegacyTransferBagInventory(inventory: InventoryItem[]): Inventor
 
   const nonTb = inventory.filter((it) => it.categoryId !== 'transfer-bag');
   return [...nonTb, ...createInitialTransferBagItems(getTodayIso())];
+}
+
+function migrateLegacyIvMedsInventory(
+  inventory: InventoryItem[],
+  forms: PharmacyFormsState,
+  today: string,
+  defaultInspector: string
+): InventoryItem[] {
+  const ivItems = inventory.filter((it) => it.categoryId === 'iv-meds');
+  const isLegacyFour =
+    ivItems.length === 4 &&
+    ivItems.every((it) => ['iv-01', 'iv-02', 'iv-03', 'iv-04'].includes(it.id)) &&
+    ivItems.some((it) => it.name.includes('0.9% Normal Saline IV Bag 1000ml'));
+
+  const baseInventory = isLegacyFour
+    ? [...inventory.filter((it) => it.categoryId !== 'iv-meds'), ...createInitialIvMedsItems(today)]
+    : inventory;
+
+  return syncPharmacyFormItemsIntoIvMeds(baseInventory, forms, today, defaultInspector);
+}
+
+function hydrateIvMedsAuditMeta(
+  raw: IvMedsAuditMeta | undefined,
+  today: string
+): IvMedsAuditMeta {
+  const base = createInitialIvMedsAuditMeta(today);
+  if (!raw) return base;
+  const staff = Array.isArray(raw.staffAssignments) ? [...raw.staffAssignments] : [];
+  while (staff.length < 3) {
+    staff.push(base.staffAssignments[staff.length] || {
+      id: `ivm-stf-${staff.length + 1}`,
+      staffName: '',
+      role: 'Ward Nurse',
+      assignedLists: '',
+      checkedDate: '',
+      signature: '',
+    });
+  }
+  const monthParts = (raw.monthYear || '').trim().split(/\s+/);
+  const derivedYear =
+    monthParts.length > 1 && /^\d{4}$/.test(monthParts[monthParts.length - 1])
+      ? monthParts[monthParts.length - 1]
+      : '';
+  const derivedMonth = derivedYear
+    ? monthParts.slice(0, -1).join(' ')
+    : monthParts.join(' ');
+  const month = raw.month !== undefined ? raw.month : derivedMonth || base.month || '';
+  const year = raw.year !== undefined ? raw.year : derivedYear || base.year || '';
+  const combined = [month.trim(), year.trim()].filter(Boolean).join(' ');
+  return {
+    wardNumber: raw.wardNumber ?? base.wardNumber ?? '',
+    month,
+    year,
+    monthYear: combined || raw.monthYear || base.monthYear,
+    staffAssignments: staff,
+    notes: raw.notes ?? base.notes,
+  };
+}
+
+function hydrateSectionMeta(
+  raw: Record<string, SectionPeriodMeta> | undefined,
+  today: string
+): Record<string, SectionPeriodMeta> {
+  const base = createInitialSectionMeta(today);
+  if (!raw || typeof raw !== 'object') return base;
+  const merged: Record<string, SectionPeriodMeta> = { ...base };
+  for (const [key, val] of Object.entries(raw)) {
+    if (val && typeof val === 'object') {
+      const def = createDefaultSectionPeriodMeta(today);
+      merged[key] = {
+        wardNumber: val.wardNumber ?? def.wardNumber,
+        month: val.month ?? def.month,
+        year: val.year ?? def.year,
+      };
+    }
+  }
+  return merged;
 }
 
 function loadInitialStore(): WardStoreData {
@@ -76,16 +165,25 @@ function loadInitialStore(): WardStoreData {
             }
           : initial.pharmacyForms;
         const today = getTodayIso();
+        const hydratedForms = syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts);
+        const migratedInventory = migrateLegacyIvMedsInventory(
+          migrateLegacyTransferBagInventory(parsed.inventory),
+          hydratedForms,
+          today,
+          parsed.defaultInspector || initial.defaultInspector
+        );
         return {
           ...initial,
           ...parsed,
-          inventory: migrateLegacyTransferBagInventory(parsed.inventory),
+          inventory: migratedInventory,
           crashCarts: hydratedCrashCarts,
-          pharmacyForms: syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts),
+          pharmacyForms: hydratedForms,
           transferBagMeta: {
             ...createInitialTransferBagMeta(today),
             ...(parsed.transferBagMeta || {}),
           },
+          ivMedsAuditMeta: hydrateIvMedsAuditMeta(parsed.ivMedsAuditMeta, today),
+          sectionMeta: hydrateSectionMeta(parsed.sectionMeta, today),
         };
       }
     }
@@ -200,7 +298,7 @@ export function useWardStore() {
     setData((prev) => ({
       ...prev,
       inventory:
-        item.categoryId === 'transfer-bag'
+        item.categoryId === 'transfer-bag' || item.categoryId === 'iv-meds'
           ? [...prev.inventory, newItem]
           : [newItem, ...prev.inventory],
     }));
@@ -415,12 +513,20 @@ export function useWardStore() {
 
   // --- Crash Cart Weekly Checklists ---
   const updateCrashCart = (cartId: string, patch: Partial<CrashCartChecklist>) => {
+    const today = getTodayIso();
     setData((prev) => {
       const nextCarts = prev.crashCarts.map((c) => (c.id === cartId ? { ...c, ...patch } : c));
+      const syncedForms = syncNearExpiryInPharmacyForms(prev.pharmacyForms, nextCarts);
       return {
         ...prev,
         crashCarts: nextCarts,
-        pharmacyForms: syncNearExpiryInPharmacyForms(prev.pharmacyForms, nextCarts),
+        inventory: syncPharmacyFormItemsIntoIvMeds(
+          prev.inventory,
+          syncedForms,
+          today,
+          prev.defaultInspector
+        ),
+        pharmacyForms: syncedForms,
       };
     });
   };
@@ -431,6 +537,7 @@ export function useWardStore() {
     slotIdx: number,
     value: string
   ) => {
+    const today = getTodayIso();
     setData((prev) => {
       const nextCarts = prev.crashCarts.map((c) => {
         if (c.id !== cartId) return c;
@@ -444,10 +551,17 @@ export function useWardStore() {
           }),
         };
       });
+      const syncedForms = syncNearExpiryInPharmacyForms(prev.pharmacyForms, nextCarts);
       return {
         ...prev,
         crashCarts: nextCarts,
-        pharmacyForms: syncNearExpiryInPharmacyForms(prev.pharmacyForms, nextCarts),
+        inventory: syncPharmacyFormItemsIntoIvMeds(
+          prev.inventory,
+          syncedForms,
+          today,
+          prev.defaultInspector
+        ),
+        pharmacyForms: syncedForms,
       };
     });
   };
@@ -482,14 +596,22 @@ export function useWardStore() {
 
   // --- Pharmacy & Monthly Store Forms ---
   const updateCadForm = (patch: Partial<CadChecklistForm>) => {
+    const today = getTodayIso();
     setData((prev) => {
       const nextForms = {
         ...prev.pharmacyForms,
         cad: { ...prev.pharmacyForms.cad, ...patch },
       };
+      const syncedForms = syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts);
       return {
         ...prev,
-        pharmacyForms: syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts),
+        inventory: syncPharmacyFormItemsIntoIvMeds(
+          prev.inventory,
+          syncedForms,
+          today,
+          prev.defaultInspector
+        ),
+        pharmacyForms: syncedForms,
       };
     });
   };
@@ -498,6 +620,7 @@ export function useWardStore() {
     formId: WeeklyStockFormId,
     patch: Partial<WeeklyStockChecklistForm>
   ) => {
+    const today = getTodayIso();
     setData((prev) => {
       const nextForms = {
         ...prev.pharmacyForms,
@@ -506,25 +629,44 @@ export function useWardStore() {
           [formId]: { ...prev.pharmacyForms.weeklyForms[formId], ...patch },
         },
       };
+      const syncedForms =
+        formId === 'near-expiry'
+          ? nextForms
+          : syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts);
+      const nextInventory =
+        formId === 'high-alert' || formId === 'refrigerator' || formId === 'near-expiry'
+          ? syncPharmacyFormItemsIntoIvMeds(
+              prev.inventory,
+              syncedForms,
+              today,
+              prev.defaultInspector
+            )
+          : prev.inventory;
       return {
         ...prev,
-        pharmacyForms:
-          formId === 'near-expiry'
-            ? nextForms
-            : syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts),
+        inventory: nextInventory,
+        pharmacyForms: syncedForms,
       };
     });
   };
 
   const updateMonthlyStoreForm = (patch: Partial<MonthlyStoreChecklistForm>) => {
+    const today = getTodayIso();
     setData((prev) => {
       const nextForms = {
         ...prev.pharmacyForms,
         monthlyStore: { ...prev.pharmacyForms.monthlyStore, ...patch },
       };
+      const syncedForms = syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts);
       return {
         ...prev,
-        pharmacyForms: syncNearExpiryInPharmacyForms(nextForms, prev.crashCarts),
+        inventory: syncPharmacyFormItemsIntoIvMeds(
+          prev.inventory,
+          syncedForms,
+          today,
+          prev.defaultInspector
+        ),
+        pharmacyForms: syncedForms,
       };
     });
   };
@@ -577,25 +719,45 @@ export function useWardStore() {
   };
 
   const setAutoSyncNearExpiry = (enabled: boolean) => {
+    const today = getTodayIso();
     setData((prev) => {
       const updated = {
         ...prev.pharmacyForms,
         autoSyncNearExpiry: enabled,
       };
+      const nextForms = enabled
+        ? syncNearExpiryInPharmacyForms(updated, prev.crashCarts, true)
+        : updated;
       return {
         ...prev,
-        pharmacyForms: enabled
-          ? syncNearExpiryInPharmacyForms(updated, prev.crashCarts, true)
-          : updated,
+        inventory: enabled
+          ? syncPharmacyFormItemsIntoIvMeds(
+              prev.inventory,
+              nextForms,
+              today,
+              prev.defaultInspector
+            )
+          : prev.inventory,
+        pharmacyForms: nextForms,
       };
     });
   };
 
   const resyncNearExpiry = () => {
-    setData((prev) => ({
-      ...prev,
-      pharmacyForms: syncNearExpiryInPharmacyForms(prev.pharmacyForms, prev.crashCarts, true),
-    }));
+    const today = getTodayIso();
+    setData((prev) => {
+      const syncedForms = syncNearExpiryInPharmacyForms(prev.pharmacyForms, prev.crashCarts, true);
+      return {
+        ...prev,
+        inventory: syncPharmacyFormItemsIntoIvMeds(
+          prev.inventory,
+          syncedForms,
+          today,
+          prev.defaultInspector
+        ),
+        pharmacyForms: syncedForms,
+      };
+    });
   };
 
   const updateTransferBagMeta = (patch: Partial<TransferBagChecklistMeta>) => {
@@ -606,6 +768,59 @@ export function useWardStore() {
         ...(prev.transferBagMeta || {}),
         ...patch,
       },
+    }));
+  };
+
+  const updateIvMedsAuditMeta = (patch: Partial<IvMedsAuditMeta>) => {
+    setData((prev) => {
+      const current = hydrateIvMedsAuditMeta(prev.ivMedsAuditMeta, getTodayIso());
+      const nextMonth = patch.month !== undefined ? patch.month : current.month || '';
+      const nextYear = patch.year !== undefined ? patch.year : current.year || '';
+      const combined = [nextMonth.trim(), nextYear.trim()].filter(Boolean).join(' ');
+      return {
+        ...prev,
+        ivMedsAuditMeta: {
+          ...current,
+          ...patch,
+          monthYear:
+            patch.month !== undefined || patch.year !== undefined
+              ? combined
+              : patch.monthYear !== undefined
+                ? patch.monthYear
+                : current.monthYear,
+        },
+      };
+    });
+  };
+
+  const updateSectionMeta = (sectionId: string, patch: Partial<SectionPeriodMeta>) => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const prevMap = prev.sectionMeta || {};
+      const existing = prevMap[sectionId] || createDefaultSectionPeriodMeta(today);
+      return {
+        ...prev,
+        sectionMeta: {
+          ...prevMap,
+          [sectionId]: {
+            ...existing,
+            ...patch,
+          },
+        },
+      };
+    });
+  };
+
+  const resyncIvMedsFromForms = () => {
+    const today = getTodayIso();
+    setData((prev) => ({
+      ...prev,
+      inventory: syncPharmacyFormItemsIntoIvMeds(
+        prev.inventory,
+        prev.pharmacyForms,
+        today,
+        prev.defaultInspector
+      ),
     }));
   };
 
@@ -637,18 +852,27 @@ export function useWardStore() {
         }
       : initial.pharmacyForms;
     const today = getTodayIso();
+    const hydratedForms = syncNearExpiryInPharmacyForms(rawForms, nextCarts);
+    const nextInventory = Array.isArray(imported.inventory)
+      ? migrateLegacyIvMedsInventory(
+          migrateLegacyTransferBagInventory(imported.inventory),
+          hydratedForms,
+          today,
+          imported.defaultInspector || initial.defaultInspector
+        )
+      : initial.inventory;
     setData({
       ...initial,
       ...imported,
-      inventory: Array.isArray(imported.inventory)
-        ? migrateLegacyTransferBagInventory(imported.inventory)
-        : initial.inventory,
+      inventory: nextInventory,
       crashCarts: nextCarts,
-      pharmacyForms: syncNearExpiryInPharmacyForms(rawForms, nextCarts),
+      pharmacyForms: hydratedForms,
       transferBagMeta: {
         ...createInitialTransferBagMeta(today),
         ...(imported.transferBagMeta || {}),
       },
+      ivMedsAuditMeta: hydrateIvMedsAuditMeta(imported.ivMedsAuditMeta, today),
+      sectionMeta: hydrateSectionMeta(imported.sectionMeta, today),
       lastBackupDate: today,
     });
   };
@@ -694,6 +918,9 @@ export function useWardStore() {
     setAutoSyncNearExpiry,
     resyncNearExpiry,
     updateTransferBagMeta,
+    updateIvMedsAuditMeta,
+    updateSectionMeta,
+    resyncIvMedsFromForms,
     importBackupData,
     markBackupDone,
     resetToInitialData,

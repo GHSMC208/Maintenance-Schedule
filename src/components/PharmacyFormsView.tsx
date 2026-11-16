@@ -11,6 +11,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { inferIvMedsGroup } from '../data/ivMedsSeed';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
 import {
   IV_LOTION_ITEMS,
@@ -271,9 +272,38 @@ export function PharmacyFormsView({
     }
 
     if (activeForm === 'cad') {
+      const cadStockItems = inventory.filter(
+        (it) =>
+          it.categoryId === 'iv-meds' &&
+          (it.medGroup || inferIvMedsGroup(it)) === 'cad'
+      );
+      const byName = new Map(
+        cadStockItems.map((it) => [it.name.trim().toLowerCase(), it] as const)
+      );
+      const nextRows = forms.cad.rows.map((row) => {
+        const match = byName.get(row.drugName.trim().toLowerCase());
+        if (!match) return row;
+        const expStr = match.expiryDate ? match.expiryDate.split('-').reverse().join('/') : '';
+        return {
+          ...row,
+          expiryDate: row.expiryDate || expStr,
+        };
+      });
+      const existingNames = new Set(
+        nextRows.map((r) => r.drugName.trim().toLowerCase()).filter(Boolean)
+      );
+      const extraRows: CadDrugRow[] = cadStockItems
+        .filter((it) => !existingNames.has(it.name.trim().toLowerCase()))
+        .map((it, idx) => ({
+          ...makeBlankCadRow(idx),
+          drugName: it.name,
+          expiryDate: it.expiryDate ? it.expiryDate.split('-').reverse().join('/') : '',
+        }));
+
       onUpdateCad({
         unit: forms.cad.unit || wardName,
         month: forms.cad.month || monthStr,
+        rows: extraRows.length > 0 ? [...nextRows, ...extraRows] : nextRows,
       });
       return;
     }
@@ -289,17 +319,16 @@ export function PharmacyFormsView({
     } else if (activeForm === 'high-alert') {
       sourceItems = inventory.filter(
         (it) =>
-          it.categoryId === 'iv-meds' ||
-          it.notes.toLowerCase().includes('high-alert') ||
-          it.name.toLowerCase().includes('epinephrine') ||
-          it.name.toLowerCase().includes('amiodarone')
+          (it.categoryId === 'iv-meds' &&
+            (it.medGroup || inferIvMedsGroup(it)) === 'high-alert') ||
+          it.notes.toLowerCase().includes('high-alert')
       );
     } else if (activeForm === 'refrigerator') {
       sourceItems = inventory.filter(
         (it) =>
+          (it.categoryId === 'iv-meds' &&
+            (it.medGroup || inferIvMedsGroup(it)) === 'refrigerator') ||
           it.locationDetail.toLowerCase().includes('fridge') ||
-          it.name.toLowerCase().includes('succinyl') ||
-          it.name.toLowerCase().includes('vasopressin') ||
           it.categoryId === 'prep-room'
       );
     } else {

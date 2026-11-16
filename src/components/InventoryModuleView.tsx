@@ -16,6 +16,7 @@ import type {
   CategoryMeta,
   EquipmentStatus,
   InventoryItem,
+  SectionPeriodMeta,
   TransferBagChecklistMeta,
 } from '../types/ward';
 import {
@@ -33,6 +34,8 @@ interface InventoryModuleViewProps {
   defaultInspector: string;
   transferBagMeta?: TransferBagChecklistMeta;
   onUpdateTransferBagMeta?: (patch: Partial<TransferBagChecklistMeta>) => void;
+  sectionMeta?: SectionPeriodMeta;
+  onUpdateSectionMeta?: (patch: Partial<SectionPeriodMeta>) => void;
   onAddItem: (item: Omit<InventoryItem, 'id'>) => void;
   onUpdateItem: (itemId: string, patch: Partial<InventoryItem>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -45,6 +48,8 @@ export function InventoryModuleView({
   defaultInspector,
   transferBagMeta,
   onUpdateTransferBagMeta,
+  sectionMeta,
+  onUpdateSectionMeta,
   onAddItem,
   onUpdateItem,
   onDeleteItem,
@@ -231,6 +236,43 @@ export function InventoryModuleView({
             </div>
           </div>
         </div>
+
+        {!isTransferBag && onUpdateSectionMeta && (
+          <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Ward Number
+              </label>
+              <input
+                type="text"
+                value={sectionMeta?.wardNumber || ''}
+                onChange={(e) => onUpdateSectionMeta({ wardNumber: e.target.value })}
+                placeholder="e.g., 208 / CCU"
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
+              <input
+                type="text"
+                value={sectionMeta?.month || ''}
+                onChange={(e) => onUpdateSectionMeta({ month: e.target.value })}
+                placeholder="e.g., November"
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
+              <input
+                type="text"
+                value={sectionMeta?.year || ''}
+                onChange={(e) => onUpdateSectionMeta({ year: e.target.value })}
+                placeholder="2026"
+                className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+          </div>
+        )}
 
         {isTransferBag && (
           <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
