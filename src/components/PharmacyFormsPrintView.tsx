@@ -548,18 +548,20 @@ export function PharmacyRequestPrintPage({ form }: { form: PharmacyRequestForm }
                 </div>
 
                 {/* Requester Row 2: Requester Name | CPR | Signature */}
-                <div className="grid grid-cols-[55%_17%_28%] border-b border-black text-[10px]">
-                  <div className="border-r border-black px-1.5 py-1 min-h-[36px]">
+                <div className="grid grid-cols-[50%_15%_35%] border-b border-black text-[10px]">
+                  <div className="border-r border-black px-1.5 py-1 flex flex-col min-h-[56px]">
                     <div className="font-bold">Requester Name</div>
-                    <div className="mt-0.5">{form.requesterName}</div>
+                    <div className="mt-1">{form.requesterName}</div>
                   </div>
-                  <div className="border-r border-black px-1.5 py-1 flex flex-col items-center min-h-[36px]">
+                  <div className="border-r border-black px-1.5 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold">CPR</div>
-                    <div className="mt-0.5 text-center">{form.requesterCpr}</div>
+                    <div className="mt-1 text-center">{form.requesterCpr}</div>
                   </div>
-                  <div className="px-1.5 py-1 flex flex-col items-center min-h-[36px]">
+                  <div className="px-2 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold">Signature</div>
-                    <div className="mt-0.5 text-center">{form.requesterSignature}</div>
+                    <div className="flex-1 w-full flex items-center justify-center text-center text-[11px] px-1">
+                      {form.requesterSignature}
+                    </div>
                   </div>
                 </div>
 
@@ -587,28 +589,28 @@ export function PharmacyRequestPrintPage({ form }: { form: PharmacyRequestForm }
                       </th>
                     </tr>
                     <tr>
-                      <th className="border-b border-r border-black px-1 py-[3px] text-center font-bold w-[2.5%]">
+                      <th className="border-b border-r border-black px-1 py-[2.5px] text-center font-bold w-[2.5%]">
                         #
                       </th>
-                      <th className="border-b border-r border-black px-1 py-[3px] text-center font-bold w-[10.5%]">
+                      <th className="border-b border-r border-black px-1 py-[2.5px] text-center font-bold w-[10.5%]">
                         Item Code
                       </th>
-                      <th className="border-b border-r border-black px-1.5 py-[3px] text-center font-bold w-[34%]">
+                      <th className="border-b border-r border-black px-1.5 py-[2.5px] text-center font-bold w-[34%]">
                         Item Description
                       </th>
-                      <th className="border-b border-r border-black px-1 py-[3px] text-center font-bold w-[8%]">
+                      <th className="border-b border-r border-black px-1 py-[2.5px] text-center font-bold w-[8%]">
                         UoM
                       </th>
-                      <th className="border-b border-r border-black px-1 py-[3px] text-center font-bold w-[8.5%]">
+                      <th className="border-b border-r border-black px-1 py-[2.5px] text-center font-bold w-[8.5%]">
                         Req. Qty.
                       </th>
-                      <th className="border-b border-r border-black px-1 py-[3px] text-center font-bold w-[11%]">
+                      <th className="border-b border-r border-black px-1 py-[2.5px] text-center font-bold w-[11%]">
                         Supplied Qty.
                       </th>
-                      <th className="border-b border-r border-black px-1 py-[3px] text-center font-bold w-[12.5%]">
+                      <th className="border-b border-r border-black px-1 py-[2.5px] text-center font-bold w-[12.5%]">
                         Lot #
                       </th>
-                      <th className="border-b border-black px-1 py-[3px] text-center font-bold w-[13%]">
+                      <th className="border-b border-black px-1 py-[2.5px] text-center font-bold w-[13%]">
                         Expiry Date
                       </th>
                     </tr>
@@ -618,29 +620,29 @@ export function PharmacyRequestPrintPage({ form }: { form: PharmacyRequestForm }
                       const rowNum = pageIdx * REQUEST_ROWS_PER_PAGE + idx + 1;
                       return (
                         <tr key={row.id}>
-                          <td className="border-b border-r border-black px-1 py-[2.5px] text-center text-[10px]">
+                          <td className="border-b border-r border-black px-1 py-[2px] text-center text-[10px]">
                             {rowNum}
                           </td>
-                          <td className="border-b border-r border-black px-1 py-[2.5px] text-center text-[9.5px] font-mono">
+                          <td className="border-b border-r border-black px-1 py-[2px] text-center text-[9.5px] font-mono">
                             {row.itemCode}
                           </td>
-                          <td className="border-b border-r border-black bg-[#fff2cc] px-1.5 py-[2.5px] text-left text-[9.5px]">
+                          <td className="border-b border-r border-black bg-[#fff2cc] px-1.5 py-[2px] text-left text-[9.5px]">
                             {row.description}
                           </td>
-                          <td className="border-b border-r border-black px-1 py-[2.5px] text-center text-[9.5px]">
+                          <td className="border-b border-r border-black px-1 py-[2px] text-center text-[9.5px]">
                             {row.uom}
                           </td>
-                          <td className="border-b border-r border-black px-1 py-[2.5px] text-center text-[9.5px]">
+                          <td className="border-b border-r border-black px-1 py-[2px] text-center text-[9.5px]">
                             {row.reqQty}
                           </td>
-                          <td className="border-b border-r border-black px-1 py-[2.5px] text-center text-[9.5px]">
+                          <td className="border-b border-r border-black px-1 py-[2px] text-center text-[9.5px]">
                             {row.suppliedQty}
                           </td>
-                          <td className="border-b border-r border-black px-1 py-[2.5px] text-center text-[9.5px]">
+                          <td className="border-b border-r border-black px-1 py-[2px] text-center text-[9.5px]">
                             {row.lotNo}
                           </td>
                           <td
-                            className={`border-b border-black px-1 py-[2.5px] text-center text-[9.5px] ${expiryHl(row.expiryDate)}`}
+                            className={`border-b border-black px-1 py-[2px] text-center text-[9.5px] ${expiryHl(row.expiryDate)}`}
                           >
                             {row.expiryDate}
                           </td>
@@ -654,32 +656,34 @@ export function PharmacyRequestPrintPage({ form }: { form: PharmacyRequestForm }
                 <div className="bg-[#d9d9d9] border-b border-black text-center font-bold text-[10.5px] py-[2px]">
                   Preparer Details
                 </div>
-                <div className="grid grid-cols-[13%_31%_11%_18%_14%_13%] border-b border-black text-[10px]">
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[38px]">
+                <div className="grid grid-cols-[12%_23%_11%_19%_12%_23%] border-b border-black text-[10px]">
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center leading-tight">
                       Prepared from Location
                     </div>
-                    <div className="mt-0.5 text-center">{form.preparedFromLocation}</div>
+                    <div className="mt-1 text-center">{form.preparedFromLocation}</div>
                   </div>
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[38px]">
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center">Cost Center</div>
-                    <div className="mt-0.5 text-center">{form.preparerCostCenter}</div>
+                    <div className="mt-1 text-center">{form.preparerCostCenter}</div>
                   </div>
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[38px]">
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center leading-tight">Preparation Date</div>
-                    <div className="mt-0.5 text-center">{form.preparationDate}</div>
+                    <div className="mt-1 text-center">{form.preparationDate}</div>
                   </div>
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[38px]">
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center">Prepared by</div>
-                    <div className="mt-0.5 text-center">{form.preparedBy}</div>
+                    <div className="mt-1 text-center">{form.preparedBy}</div>
                   </div>
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[38px]">
-                    <div className="font-bold text-center">Preparer&apos;s CPR #</div>
-                    <div className="mt-0.5 text-center">{form.preparerCpr}</div>
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
+                    <div className="font-bold text-center leading-tight">Preparer&apos;s CPR #</div>
+                    <div className="mt-1 text-center">{form.preparerCpr}</div>
                   </div>
-                  <div className="px-1 py-1 flex flex-col items-center min-h-[38px]">
+                  <div className="px-2 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center">Preparer&apos;s Sign</div>
-                    <div className="mt-0.5 text-center">{form.preparerSign}</div>
+                    <div className="flex-1 w-full flex items-center justify-center text-center text-[11px] px-1">
+                      {form.preparerSign}
+                    </div>
                   </div>
                 </div>
 
@@ -687,26 +691,28 @@ export function PharmacyRequestPrintPage({ form }: { form: PharmacyRequestForm }
                 <div className="bg-[#d9d9d9] border-b border-black text-center font-bold text-[10.5px] py-[2px]">
                   Receiver Details
                 </div>
-                <div className="grid grid-cols-[13%_31%_29%_14%_13%] text-[10px]">
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[34px]">
+                <div className="grid grid-cols-[12%_23%_30%_12%_23%] text-[10px]">
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center">Receiving Date</div>
-                    <div className="mt-0.5 text-center">{form.receivingDate}</div>
+                    <div className="mt-1 text-center">{form.receivingDate}</div>
                   </div>
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[34px]">
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center">Location</div>
-                    <div className="mt-0.5 text-center">{form.receiverLocation}</div>
+                    <div className="mt-1 text-center">{form.receiverLocation}</div>
                   </div>
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[34px]">
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center">Received by (Full Name)</div>
-                    <div className="mt-0.5 text-center">{form.receivedBy}</div>
+                    <div className="mt-1 text-center">{form.receivedBy}</div>
                   </div>
-                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[34px]">
-                    <div className="font-bold text-center">Receiver&apos;s CPR #</div>
-                    <div className="mt-0.5 text-center">{form.receiverCpr}</div>
+                  <div className="border-r border-black px-1 py-1 flex flex-col items-center min-h-[56px]">
+                    <div className="font-bold text-center leading-tight">Receiver&apos;s CPR #</div>
+                    <div className="mt-1 text-center">{form.receiverCpr}</div>
                   </div>
-                  <div className="px-1 py-1 flex flex-col items-center min-h-[34px]">
+                  <div className="px-2 py-1 flex flex-col items-center min-h-[56px]">
                     <div className="font-bold text-center">Receiver&apos;s Sign.</div>
-                    <div className="mt-0.5 text-center">{form.receiverSign}</div>
+                    <div className="flex-1 w-full flex items-center justify-center text-center text-[11px] px-1">
+                      {form.receiverSign}
+                    </div>
                   </div>
                 </div>
               </div>
