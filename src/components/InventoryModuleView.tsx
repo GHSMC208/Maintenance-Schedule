@@ -32,7 +32,10 @@ import {
 } from '../utils/dateUtils';
 import { STORE_SECTIONS } from '../data/storeItemsSeed';
 import { EmergencyBagPrintView } from './EmergencyBagPrintView';
-import { StoreChecklistPrintView } from './StoreChecklistPrintView';
+import {
+  StoreChecklistPrintView,
+  type StorePrintLayoutMode,
+} from './StoreChecklistPrintView';
 
 interface InventoryModuleViewProps {
   category: CategoryMeta;
@@ -69,6 +72,7 @@ export function InventoryModuleView({
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [unitFilter, setUnitFilter] = useState<'All' | 'CCU' | 'SD' | 'General Ward'>('All');
   const [storeSectionFilter, setStoreSectionFilter] = useState<string>('All');
+  const [storePrintLayout, setStorePrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
   const [collapsedStoreSections, setCollapsedStoreSections] = useState<Record<string, boolean>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'attention'>('all');
   const [search, setSearch] = useState('');
@@ -465,6 +469,34 @@ export function InventoryModuleView({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div
+                className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                title="Choose Store printout layout"
+              >
+                <button
+                  type="button"
+                  onClick={() => setStorePrintLayout('two-per-sheet')}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    storePrintLayout === 'two-per-sheet'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  2 Tables / Sheet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStorePrintLayout('one-per-sheet')}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    storePrintLayout === 'one-per-sheet'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  1 Table / Sheet
+                </button>
+              </div>
+
               <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
                 <button
                   type="button"
@@ -1394,6 +1426,7 @@ export function InventoryModuleView({
             meta={sectionMeta}
             wardName={wardName}
             defaultInspector={defaultInspector}
+            layoutMode={storePrintLayout}
           />
         </div>
       )}
