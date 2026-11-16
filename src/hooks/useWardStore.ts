@@ -3,6 +3,7 @@ import { createInitialCrashCarts } from '../data/crashCartSeed';
 import {
   createDefaultSectionPeriodMeta,
   createInitialSectionMeta,
+  createInitialStoreStaff,
   createInitialWardData,
 } from '../data/initialWardData';
 import {
@@ -67,10 +68,16 @@ function migrateLegacyStoreInventory(
     storeItems.every((it) => ['st-01', 'st-02', 'st-03', 'st-04'].includes(it.id)) &&
     storeItems.some((it) => it.name.includes('Sterile Gauze Swabs 10x10cm'));
 
-  if (!isLegacyFour) return inventory;
+  if (isLegacyFour) {
+    const nonStore = inventory.filter((it) => it.categoryId !== 'store');
+    return [...nonStore, ...createInitialStoreItems(today)];
+  }
 
-  const nonStore = inventory.filter((it) => it.categoryId !== 'store');
-  return [...nonStore, ...createInitialStoreItems(today)];
+  return inventory.map((it) =>
+    it.categoryId === 'store' && it.locationDetail === 'STATIONARY STORE - GFO - GSS'
+      ? { ...it, locationDetail: 'STATIONARY STORE' }
+      : it
+  );
 }
 
 function migrateLegacyIvMedsInventory(
@@ -133,6 +140,30 @@ function hydrateSectionMeta(
   for (const [key, val] of Object.entries(raw)) {
     if (val && typeof val === 'object') {
       const def = createDefaultSectionPeriodMeta(today);
+      let staffAssignments = val.staffAssignments;
+      if (key === 'store') {
+        if (Array.isArray(val.staffAssignments) && val.staffAssignments.length > 0) {
+          staffAssignments = val.staffAssignments.map((st) => ({
+            ...st,
+            assignedSections: st.assignedSections.replace(
+              /\s*-\s*GFO\s*-\s*GSS/gi,
+              ''
+            ),
+          }));
+        } else if (val.staffName || val.signature || val.date) {
+          const fallback = createInitialStoreStaff(today)[0];
+          staffAssignments = [
+            {
+              ...fallback,
+              staffName: val.staffName ?? fallback.staffName,
+              signature: val.signature ?? '',
+              checkedDate: val.date ?? fallback.checkedDate,
+            },
+          ];
+        } else {
+          staffAssignments = createInitialStoreStaff(today);
+        }
+      }
       merged[key] = {
         wardNumber: val.wardNumber ?? def.wardNumber,
         month: val.month ?? def.month,
@@ -140,6 +171,7 @@ function hydrateSectionMeta(
         staffName: val.staffName,
         signature: val.signature,
         date: val.date,
+        staffAssignments,
       };
     }
   }

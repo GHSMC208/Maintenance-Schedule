@@ -11,6 +11,7 @@ import {
   Printer,
   Search,
   Trash2,
+  Users,
   XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -19,6 +20,7 @@ import type {
   EquipmentStatus,
   InventoryItem,
   SectionPeriodMeta,
+  StoreStaffAssignment,
   TransferBagChecklistMeta,
 } from '../types/ward';
 import {
@@ -195,6 +197,68 @@ export function InventoryModuleView({
     setCollapsedStoreSections(next);
   };
 
+  const storeStaffAssignments: StoreStaffAssignment[] = useMemo(() => {
+    if (sectionMeta?.staffAssignments && sectionMeta.staffAssignments.length > 0) {
+      return sectionMeta.staffAssignments;
+    }
+    const [y, m, d] = today.split('-');
+    const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
+    return [
+      {
+        id: 'st-staff-1',
+        staffName: sectionMeta?.staffName ?? defaultInspector,
+        role: 'Staff Nurse / Store Lead',
+        assignedSections: 'All Store Categories',
+        checkedDate: sectionMeta?.date || slashDate,
+        signature: sectionMeta?.signature || '',
+      },
+    ];
+  }, [sectionMeta, defaultInspector, today]);
+
+  const syncStoreStaffList = (nextList: StoreStaffAssignment[]) => {
+    if (!onUpdateSectionMeta) return;
+    const first = nextList[0];
+    onUpdateSectionMeta({
+      staffAssignments: nextList,
+      staffName: first?.staffName || '',
+      signature: first?.signature || '',
+      date: first?.checkedDate || '',
+    });
+  };
+
+  const updateStoreStaffField = (
+    idx: number,
+    field: keyof StoreStaffAssignment,
+    val: string
+  ) => {
+    const next = storeStaffAssignments.map((st, i) =>
+      i === idx ? { ...st, [field]: val } : st
+    );
+    syncStoreStaffList(next);
+  };
+
+  const addStoreStaffRow = () => {
+    const [y, m, d] = today.split('-');
+    const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
+    const next: StoreStaffAssignment[] = [
+      ...storeStaffAssignments,
+      {
+        id: `st-staff-${Date.now().toString(36)}`,
+        staffName: '',
+        role: 'Staff Nurse',
+        assignedSections: '',
+        checkedDate: slashDate,
+        signature: '',
+      },
+    ];
+    syncStoreStaffList(next);
+  };
+
+  const removeStoreStaffRow = (idx: number) => {
+    if (storeStaffAssignments.length <= 1) return;
+    syncStoreStaffList(storeStaffAssignments.filter((_, i) => i !== idx));
+  };
+
   const openAdd = (presetStoreSection?: string) => {
     setEditingItem(null);
     setFormName('');
@@ -365,7 +429,7 @@ export function InventoryModuleView({
 
         {isStore && onUpdateSectionMeta && (
           <div className="pt-4 border-t border-slate-200 flex flex-wrap items-end justify-between gap-3">
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 flex-1 min-w-[340px]">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 flex-1 max-w-2xl">
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
                   Ward Number
@@ -395,40 +459,6 @@ export function InventoryModuleView({
                   value={sectionMeta?.year || ''}
                   onChange={(e) => onUpdateSectionMeta({ year: e.target.value })}
                   placeholder="2026"
-                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Staff Name
-                </label>
-                <input
-                  type="text"
-                  value={sectionMeta?.staffName ?? ''}
-                  onChange={(e) => onUpdateSectionMeta({ staffName: e.target.value })}
-                  placeholder={defaultInspector}
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Signature
-                </label>
-                <input
-                  type="text"
-                  value={sectionMeta?.signature || ''}
-                  onChange={(e) => onUpdateSectionMeta({ signature: e.target.value })}
-                  placeholder="Sign / Initials"
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">Date</label>
-                <input
-                  type="text"
-                  value={sectionMeta?.date || ''}
-                  onChange={(e) => onUpdateSectionMeta({ date: e.target.value })}
-                  placeholder="DD/MM/YYYY"
                   className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                 />
               </div>
@@ -573,6 +603,129 @@ export function InventoryModuleView({
           </div>
         )}
       </div>
+
+      {/* Assigned Monthly Staff Card for Store Items */}
+      {isStore && viewMode === 'editor' && (
+        <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-teal-700" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Assigned Staff (Monthly Store Checklist)
+                  </h3>
+                  <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                    {storeStaffAssignments.filter((s) => s.staffName.trim()).length} /{' '}
+                    {storeStaffAssignments.length} Assigned
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Assign one or more ward staff members to check Store categories. All assigned staff appear on the printed GH/NUR/2025-19 sign-off block.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={addStoreStaffRow}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Staff Member
+            </button>
+          </div>
+
+          <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-medium text-slate-600">
+                  <th className="py-2 px-2.5 w-10 text-center">#</th>
+                  <th className="py-2 px-2.5 min-w-[170px]">Staff Name</th>
+                  <th className="py-2 px-2.5 min-w-[140px]">Role</th>
+                  <th className="py-2 px-2.5 min-w-[210px]">Assigned Categories</th>
+                  <th className="py-2 px-2.5 w-32 text-center">Date Checked</th>
+                  <th className="py-2 px-2.5 w-36 text-center">Signature</th>
+                  <th className="py-2 px-2 w-10 text-center">
+                    <span className="sr-only">Remove</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {storeStaffAssignments.map((st, idx) => (
+                  <tr key={st.id} className="hover:bg-slate-50/70">
+                    <td className="p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
+                    <td className="p-1.5">
+                      <input
+                        type="text"
+                        value={st.staffName}
+                        onChange={(e) => updateStoreStaffField(idx, 'staffName', e.target.value)}
+                        placeholder={`Staff ${idx + 1} full name`}
+                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                      />
+                    </td>
+                    <td className="p-1.5">
+                      <input
+                        type="text"
+                        value={st.role}
+                        onChange={(e) => updateStoreStaffField(idx, 'role', e.target.value)}
+                        placeholder="e.g., Staff Nurse / Storekeeper"
+                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                      />
+                    </td>
+                    <td className="p-1.5">
+                      <input
+                        type="text"
+                        value={st.assignedSections}
+                        onChange={(e) =>
+                          updateStoreStaffField(idx, 'assignedSections', e.target.value)
+                        }
+                        placeholder="e.g., Surgical Disposable & Dressing"
+                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                      />
+                    </td>
+                    <td className="p-1.5">
+                      <input
+                        type="text"
+                        value={st.checkedDate}
+                        onChange={(e) =>
+                          updateStoreStaffField(idx, 'checkedDate', e.target.value)
+                        }
+                        placeholder="DD/MM/YYYY"
+                        className="w-full px-2 py-1 text-xs font-mono text-center border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                      />
+                    </td>
+                    <td className="p-1.5">
+                      <input
+                        type="text"
+                        value={st.signature}
+                        onChange={(e) => updateStoreStaffField(idx, 'signature', e.target.value)}
+                        placeholder="Sign / Initials"
+                        className="w-full px-2 py-1 text-xs text-center border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                      />
+                    </td>
+                    <td className="p-1.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => removeStoreStaffRow(idx)}
+                        disabled={storeStaffAssignments.length <= 1}
+                        title={
+                          storeStaffAssignments.length <= 1
+                            ? 'At least 1 assigned staff required'
+                            : 'Remove staff member'
+                        }
+                        className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Filter & Inventory Grid */}
       {isStore ? (

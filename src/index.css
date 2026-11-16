@@ -149,4 +149,23 @@
     page-break-after: auto;
     break-after: auto;
   }
+
+  .store-compact-page {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 196mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .store-compact-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
 }

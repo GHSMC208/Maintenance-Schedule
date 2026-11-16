@@ -81,11 +81,34 @@ export function createDefaultSectionPeriodMeta(today: string): SectionPeriodMeta
   };
 }
 
+export function createInitialStoreStaff(today: string) {
+  const [y, m, d] = today.split('-');
+  const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
+  return [
+    {
+      id: 'st-staff-1',
+      staffName: 'RN Sara Al-Mansoor',
+      role: 'Staff Nurse / Store Lead',
+      assignedSections: 'All Store Categories',
+      checkedDate: slashDate,
+      signature: '',
+    },
+  ];
+}
+
 export function createInitialSectionMeta(today: string): Record<string, SectionPeriodMeta> {
   const base = createDefaultSectionPeriodMeta(today);
+  const [y, m, d] = today.split('-');
+  const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
   return {
     equipment: { ...base },
-    store: { ...base },
+    store: {
+      ...base,
+      staffName: 'RN Sara Al-Mansoor',
+      signature: '',
+      date: slashDate,
+      staffAssignments: createInitialStoreStaff(today),
+    },
     'prep-room': { ...base },
     'blood-trolley': { ...base },
     'procedure-trolley': { ...base },

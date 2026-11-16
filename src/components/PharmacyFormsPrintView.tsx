@@ -441,37 +441,67 @@ export function MonthlyStorePrintPage({ form }: { form: MonthlyStoreChecklistFor
                   )}
 
                   {/* Attached Right-Aligned Sign-Off Rows on Final Page */}
-                  {isLastPage && (
-                    <>
-                      <tr>
-                        <td colSpan={2} className="border-0" />
-                        <td className="border border-black bg-[#d9d9d9] font-bold px-2.5 py-2">
-                          Staff name
-                        </td>
-                        <td colSpan={2} className="border border-black px-2.5 py-2">
-                          {form.staffName}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td colSpan={2} className="border-0" />
-                        <td className="border border-black bg-[#d9d9d9] font-bold px-2.5 py-2">
-                          Signature
-                        </td>
-                        <td colSpan={2} className="border border-black px-2.5 py-2">
-                          {form.signature}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td colSpan={2} className="border-0" />
-                        <td className="border border-black bg-[#d9d9d9] font-bold px-2.5 py-2">
-                          Date
-                        </td>
-                        <td colSpan={2} className="border border-black px-2.5 py-2">
-                          {form.date}
-                        </td>
-                      </tr>
-                    </>
-                  )}
+                  {isLastPage &&
+                    (form.staffAssignments && form.staffAssignments.length > 1 ? (
+                      <>
+                        <tr>
+                          <td colSpan={2} className="border-0" />
+                          <td className="border border-black bg-[#d9d9d9] font-bold px-2 py-1.5 text-center">
+                            Staff name
+                          </td>
+                          <td className="border border-black bg-[#d9d9d9] font-bold px-2 py-1.5 text-center">
+                            Signature
+                          </td>
+                          <td className="border border-black bg-[#d9d9d9] font-bold px-2 py-1.5 text-center">
+                            Date
+                          </td>
+                        </tr>
+                        {form.staffAssignments.map((st) => (
+                          <tr key={st.id}>
+                            <td colSpan={2} className="border-0" />
+                            <td className="border border-black px-2 py-1.5 text-[10px]">
+                              {st.staffName}
+                            </td>
+                            <td className="border border-black px-2 py-1.5 text-center text-[10px]">
+                              {st.signature}
+                            </td>
+                            <td className="border border-black px-2 py-1.5 text-center text-[10px]">
+                              {st.checkedDate}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <tr>
+                          <td colSpan={2} className="border-0" />
+                          <td className="border border-black bg-[#d9d9d9] font-bold px-2.5 py-2">
+                            Staff name
+                          </td>
+                          <td colSpan={2} className="border border-black px-2.5 py-2">
+                            {form.staffName}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={2} className="border-0" />
+                          <td className="border border-black bg-[#d9d9d9] font-bold px-2.5 py-2">
+                            Signature
+                          </td>
+                          <td colSpan={2} className="border border-black px-2.5 py-2">
+                            {form.signature}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={2} className="border-0" />
+                          <td className="border border-black bg-[#d9d9d9] font-bold px-2.5 py-2">
+                            Date
+                          </td>
+                          <td colSpan={2} className="border border-black px-2.5 py-2">
+                            {form.date}
+                          </td>
+                        </tr>
+                      </>
+                    ))}
                 </tbody>
               </table>
             </div>

@@ -245,6 +245,7 @@ export interface MonthlyStoreChecklistForm {
   staffName: string;
   signature: string;
   date: string;
+  staffAssignments?: StoreStaffAssignment[];
 }
 
 export interface PharmacyRequestItemRow {
@@ -318,6 +319,15 @@ export interface IvMedsStaffAssignment {
   signature: string;
 }
 
+export interface StoreStaffAssignment {
+  id: string;
+  staffName: string;
+  role: string;
+  assignedSections: string;
+  checkedDate: string;
+  signature: string;
+}
+
 export interface SectionPeriodMeta {
   wardNumber: string;
   month: string;
@@ -325,6 +335,7 @@ export interface SectionPeriodMeta {
   staffName?: string;
   signature?: string;
   date?: string;
+  staffAssignments?: StoreStaffAssignment[];
 }
 
 export interface IvMedsAuditMeta {
