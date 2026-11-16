@@ -3,6 +3,10 @@ import { addDaysIso, getTodayIso } from '../utils/dateUtils';
 import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
 import { createInitialCrashCarts } from './crashCartSeed';
 import { createInitialPharmacyForms } from './pharmacyFormsSeed';
+import {
+  createInitialTransferBagItems,
+  createInitialTransferBagMeta,
+} from './transferBagSeed';
 
 export const CORE_CATEGORIES: CategoryMeta[] = [
   {
@@ -52,7 +56,7 @@ export const CORE_CATEGORIES: CategoryMeta[] = [
     id: 'transfer-bag',
     label: 'Emergency Patient Transfer Bag',
     shortLabel: 'Transfer Bag',
-    description: 'Intrahospital emergency transport bag items, tamper seal integrity, and medication expiry.',
+    description: 'Emergency Bag Checklist – Ward: 28 standardized items checked and locked monthly and post each use.',
     supportsUnitSplit: false,
   },
 ];
@@ -71,6 +75,7 @@ export function createInitialWardData(): WardStoreData {
     customCategories: [],
     crashCarts,
     pharmacyForms,
+    transferBagMeta: createInitialTransferBagMeta(today),
     lastBackupDate: null,
     tasks: [
       {
@@ -591,52 +596,8 @@ export function createInitialWardData(): WardStoreData {
         notes: 'High-alert sticker applied.',
       },
 
-      // Emergency Patient Transfer Bag
-      {
-        id: 'tb-01',
-        categoryId: 'transfer-bag',
-        name: 'Adult Bag-Valve-Mask (Ambu) + Reservoir & Mask',
-        unit: 'CCU',
-        locationDetail: 'Transfer Bag Main Compartment',
-        quantity: 1,
-        parLevel: 1,
-        unitOfMeasure: 'kit',
-        batchOrSerial: 'SEAL-TB-4092',
-        expiryDate: addDaysIso(today, 365),
-        lastCheckedDate: addDaysIso(today, -8),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Single-use sterile pack sealed.',
-      },
-      {
-        id: 'tb-02',
-        categoryId: 'transfer-bag',
-        name: 'Dextrose 50% (D50W) 50ml Prefilled Syringe',
-        unit: 'CCU',
-        locationDetail: 'Transfer Bag Drug Pouch',
-        quantity: 2,
-        parLevel: 2,
-        unitOfMeasure: 'syringes',
-        batchOrSerial: 'LOT-D50-619',
-        expiryDate: addDaysIso(today, 19),
-        lastCheckedDate: addDaysIso(today, -8),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Expiring in 19 days — swap during weekly bag seal renewal.',
-      },
-      {
-        id: 'tb-03',
-        categoryId: 'transfer-bag',
-        name: 'Oropharyngeal Airways (Sizes 2, 3, 4) & Suction Catheters',
-        unit: 'CCU',
-        locationDetail: 'Transfer Bag Airway Pocket',
-        quantity: 3,
-        parLevel: 3,
-        unitOfMeasure: 'sets',
-        batchOrSerial: 'LOT-OPA-803',
-        expiryDate: addDaysIso(today, 400),
-        lastCheckedDate: addDaysIso(today, -8),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Complete size range verified.',
-      },
+      // Emergency Patient Transfer Bag (Official 28-Item Emergency Bag Checklist)
+      ...createInitialTransferBagItems(today),
     ],
     environmentalChecks: [
       {

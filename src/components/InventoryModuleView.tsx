@@ -2,14 +2,22 @@ import {
   AlertTriangle,
   CheckCircle2,
   Edit3,
+  Eye,
+  FileEdit,
   Minus,
   Plus,
+  Printer,
   Search,
   Trash2,
   XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import type { CategoryMeta, EquipmentStatus, InventoryItem } from '../types/ward';
+import type {
+  CategoryMeta,
+  EquipmentStatus,
+  InventoryItem,
+  TransferBagChecklistMeta,
+} from '../types/ward';
 import {
   daysBetween,
   formatShortDate,
@@ -17,11 +25,14 @@ import {
   getTodayIso,
   isItemAttentionNeeded,
 } from '../utils/dateUtils';
+import { EmergencyBagPrintView } from './EmergencyBagPrintView';
 
 interface InventoryModuleViewProps {
   category: CategoryMeta;
   items: InventoryItem[];
   defaultInspector: string;
+  transferBagMeta?: TransferBagChecklistMeta;
+  onUpdateTransferBagMeta?: (patch: Partial<TransferBagChecklistMeta>) => void;
   onAddItem: (item: Omit<InventoryItem, 'id'>) => void;
   onUpdateItem: (itemId: string, patch: Partial<InventoryItem>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -32,12 +43,16 @@ export function InventoryModuleView({
   category,
   items,
   defaultInspector,
+  transferBagMeta,
+  onUpdateTransferBagMeta,
   onAddItem,
   onUpdateItem,
   onDeleteItem,
   onVerifyItem,
 }: InventoryModuleViewProps) {
   const today = getTodayIso();
+  const isTransferBag = category.id === 'transfer-bag';
+  const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [unitFilter, setUnitFilter] = useState<'All' | 'CCU' | 'SD' | 'General Ward'>('All');
   const [statusFilter, setStatusFilter] = useState<'all' | 'attention'>('all');
   const [search, setSearch] = useState('');
@@ -165,13 +180,13 @@ export function InventoryModuleView({
   return (
     <div className="space-y-5">
       {/* Section Header & Summary Strip */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5">
+      <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">{category.label}</h2>
             <p className="text-xs text-slate-500 mt-1 max-w-2xl">{category.description}</p>
           </div>
-          <div className="flex items-center gap-6 text-right">
+          <div className="flex flex-wrap items-center gap-6 text-right">
             <div>
               <div className="text-[11px] font-medium text-slate-500">Tracked Items</div>
               <div className="text-xl font-semibold font-mono tabular-nums text-slate-900">
@@ -216,10 +231,101 @@ export function InventoryModuleView({
             </div>
           </div>
         </div>
+
+        {isTransferBag && (
+          <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 flex-1 min-w-[280px]">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Month</label>
+                <input
+                  type="text"
+                  value={transferBagMeta?.month || ''}
+                  onChange={(e) => onUpdateTransferBagMeta?.({ month: e.target.value })}
+                  placeholder="e.g., November"
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
+                <input
+                  type="text"
+                  value={transferBagMeta?.year || ''}
+                  onChange={(e) => onUpdateTransferBagMeta?.({ year: e.target.value })}
+                  placeholder="2026"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Checked By
+                </label>
+                <input
+                  type="text"
+                  value={transferBagMeta?.checkedBy || ''}
+                  onChange={(e) => onUpdateTransferBagMeta?.({ checkedBy: e.target.value })}
+                  placeholder={defaultInspector}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">Date</label>
+                <input
+                  type="text"
+                  value={transferBagMeta?.date || ''}
+                  onChange={(e) => onUpdateTransferBagMeta?.({ date: e.target.value })}
+                  placeholder="DD/MM/YYYY"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('editor')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    viewMode === 'editor'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileEdit className="w-3.5 h-3.5" />
+                  Edit List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('print-preview')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    viewMode === 'print-preview'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Print Preview
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Print Checklist (A4)
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filter & Inventory Grid */}
-      <div className="bg-white border border-slate-200 rounded-lg">
+      <div
+        className={`no-print bg-white border border-slate-200 rounded-lg ${
+          isTransferBag && viewMode === 'print-preview' ? 'hidden' : ''
+        }`}
+      >
         <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {category.supportsUnitSplit && (
@@ -502,6 +608,23 @@ export function InventoryModuleView({
           </div>
         )}
       </div>
+
+      {/* Official Emergency Bag Checklist Printable Form */}
+      {isTransferBag && (
+        <div
+          className={
+            viewMode === 'print-preview'
+              ? 'block overflow-x-auto pb-4'
+              : 'hidden print-only-block'
+          }
+        >
+          <EmergencyBagPrintView
+            items={categoryItems}
+            meta={transferBagMeta}
+            defaultInspector={defaultInspector}
+          />
+        </div>
+      )}
 
       {/* Add / Edit Item Modal */}
       {showAddModal && (

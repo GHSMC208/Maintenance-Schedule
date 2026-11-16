@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { createInitialCrashCarts } from '../data/crashCartSeed';
 import { createInitialWardData } from '../data/initialWardData';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
+import {
+  createInitialTransferBagItems,
+  createInitialTransferBagMeta,
+} from '../data/transferBagSeed';
 import type {
   CadChecklistForm,
   CategoryMeta,
@@ -17,6 +21,7 @@ import type {
   RoundCheckResult,
   ScheduleTask,
   TicketStatus,
+  TransferBagChecklistMeta,
   WardStoreData,
   WeeklyStockChecklistForm,
   WeeklyStockFormId,
@@ -25,6 +30,19 @@ import { addDaysIso, addMonthsIso, getTodayIso } from '../utils/dateUtils';
 import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
 
 const STORAGE_KEY = 'wardcare_schedule_store_v1';
+
+function migrateLegacyTransferBagInventory(inventory: InventoryItem[]): InventoryItem[] {
+  const tbItems = inventory.filter((it) => it.categoryId === 'transfer-bag');
+  const isLegacyThree =
+    tbItems.length === 3 &&
+    tbItems.every((it) => it.id === 'tb-01' || it.id === 'tb-02' || it.id === 'tb-03') &&
+    tbItems.some((it) => it.name.includes('Adult Bag-Valve-Mask'));
+
+  if (!isLegacyThree) return inventory;
+
+  const nonTb = inventory.filter((it) => it.categoryId !== 'transfer-bag');
+  return [...nonTb, ...createInitialTransferBagItems(getTodayIso())];
+}
 
 function loadInitialStore(): WardStoreData {
   try {
@@ -57,11 +75,17 @@ function loadInitialStore(): WardStoreData {
                 : [],
             }
           : initial.pharmacyForms;
+        const today = getTodayIso();
         return {
           ...initial,
           ...parsed,
+          inventory: migrateLegacyTransferBagInventory(parsed.inventory),
           crashCarts: hydratedCrashCarts,
           pharmacyForms: syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts),
+          transferBagMeta: {
+            ...createInitialTransferBagMeta(today),
+            ...(parsed.transferBagMeta || {}),
+          },
         };
       }
     }
@@ -173,7 +197,13 @@ export function useWardStore() {
       ...item,
       id: `inv-${Date.now().toString(36)}`,
     };
-    setData((prev) => ({ ...prev, inventory: [newItem, ...prev.inventory] }));
+    setData((prev) => ({
+      ...prev,
+      inventory:
+        item.categoryId === 'transfer-bag'
+          ? [...prev.inventory, newItem]
+          : [newItem, ...prev.inventory],
+    }));
   };
 
   const updateInventoryItem = (itemId: string, patch: Partial<InventoryItem>) => {
@@ -568,6 +598,17 @@ export function useWardStore() {
     }));
   };
 
+  const updateTransferBagMeta = (patch: Partial<TransferBagChecklistMeta>) => {
+    setData((prev) => ({
+      ...prev,
+      transferBagMeta: {
+        ...createInitialTransferBagMeta(getTodayIso()),
+        ...(prev.transferBagMeta || {}),
+        ...patch,
+      },
+    }));
+  };
+
   // --- Backup & Reset ---
   const importBackupData = (imported: WardStoreData) => {
     const initial = createInitialWardData();
@@ -595,12 +636,20 @@ export function useWardStore() {
             : [],
         }
       : initial.pharmacyForms;
+    const today = getTodayIso();
     setData({
       ...initial,
       ...imported,
+      inventory: Array.isArray(imported.inventory)
+        ? migrateLegacyTransferBagInventory(imported.inventory)
+        : initial.inventory,
       crashCarts: nextCarts,
       pharmacyForms: syncNearExpiryInPharmacyForms(rawForms, nextCarts),
-      lastBackupDate: getTodayIso(),
+      transferBagMeta: {
+        ...createInitialTransferBagMeta(today),
+        ...(imported.transferBagMeta || {}),
+      },
+      lastBackupDate: today,
     });
   };
 
@@ -644,6 +693,7 @@ export function useWardStore() {
     deleteCustomRequestCatalogItem,
     setAutoSyncNearExpiry,
     resyncNearExpiry,
+    updateTransferBagMeta,
     importBackupData,
     markBackupDone,
     resetToInitialData,

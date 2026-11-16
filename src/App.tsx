@@ -55,6 +55,7 @@ export default function App() {
     deleteCustomRequestCatalogItem,
     setAutoSyncNearExpiry,
     resyncNearExpiry,
+    updateTransferBagMeta,
     importBackupData,
     markBackupDone,
     resetToInitialData,
@@ -305,6 +306,8 @@ export default function App() {
                 category={activeCategory}
                 items={data.inventory}
                 defaultInspector={data.defaultInspector}
+                transferBagMeta={data.transferBagMeta}
+                onUpdateTransferBagMeta={updateTransferBagMeta}
                 onAddItem={addInventoryItem}
                 onUpdateItem={updateInventoryItem}
                 onDeleteItem={deleteInventoryItem}

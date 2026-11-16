@@ -295,6 +295,13 @@ export interface PharmacyFormsState {
   customRequestCatalogItems?: PharmacyCatalogItem[];
 }
 
+export interface TransferBagChecklistMeta {
+  month: string;
+  year: string;
+  checkedBy: string;
+  date: string;
+}
+
 export interface WardStoreData {
   wardName: string;
   defaultInspector: string;
@@ -307,5 +314,6 @@ export interface WardStoreData {
   oxygenLogs: OxygenCheckLog[];
   crashCarts: CrashCartChecklist[];
   pharmacyForms: PharmacyFormsState;
+  transferBagMeta?: TransferBagChecklistMeta;
   lastBackupDate: string | null;
 }
