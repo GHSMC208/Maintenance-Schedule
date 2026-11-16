@@ -1,6 +1,7 @@
 import {
   BriefcaseMedical,
   CalendarCheck,
+  ClipboardList,
   Droplets,
   Flame,
   FlaskConical,
@@ -19,6 +20,7 @@ import type { CategoryMeta } from '../types/ward';
 export type NavSectionId =
   | 'schedule'
   | 'crash-cart'
+  | 'pharmacy-forms'
   | 'environmental'
   | 'oxygen'
   | 'maintenance'
@@ -132,6 +134,24 @@ export function Sidebar({
               </span>
               <span className="font-mono tabular-nums text-xs text-slate-500 shrink-0 ml-2">
                 {crashCartCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectNav('pharmacy-forms')}
+              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-sm transition-colors cursor-pointer ${
+                activeNav === 'pharmacy-forms'
+                  ? 'bg-teal-50 text-teal-800 font-medium'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <span className="flex items-center gap-2.5 min-w-0">
+                <ClipboardList className="w-4 h-4 shrink-0" />
+                <span className="truncate">Pharmacy Forms</span>
+              </span>
+              <span className="font-mono tabular-nums text-xs text-slate-500 shrink-0 ml-2">
+                6
               </span>
             </button>
 

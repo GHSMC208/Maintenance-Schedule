@@ -111,4 +111,28 @@
     page-break-after: auto;
     break-after: auto;
   }
+
+  .pharmacy-page-landscape {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 192mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .pharmacy-page-portrait {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 280mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
 }

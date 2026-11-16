@@ -1,6 +1,7 @@
 import type { CategoryMeta, WardStoreData } from '../types/ward';
 import { addDaysIso, getTodayIso } from '../utils/dateUtils';
 import { createInitialCrashCarts } from './crashCartSeed';
+import { createInitialPharmacyForms } from './pharmacyFormsSeed';
 
 export const CORE_CATEGORIES: CategoryMeta[] = [
   {
@@ -63,6 +64,7 @@ export function createInitialWardData(): WardStoreData {
     defaultInspector: 'RN Sara Al-Mansoor',
     customCategories: [],
     crashCarts: createInitialCrashCarts(),
+    pharmacyForms: createInitialPharmacyForms(),
     lastBackupDate: null,
     tasks: [
       {

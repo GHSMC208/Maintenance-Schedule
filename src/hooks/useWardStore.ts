@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react';
 import { createInitialCrashCarts } from '../data/crashCartSeed';
 import { createInitialWardData } from '../data/initialWardData';
+import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
 import type {
+  CadChecklistForm,
   CategoryMeta,
   CrashCartChecklist,
   EnvironmentalCheckItem,
   InventoryItem,
   MaintenanceTicket,
+  MonthlyStoreChecklistForm,
   OxygenCheckLog,
   OxygenCylinder,
   RoundCheckResult,
   ScheduleTask,
   TicketStatus,
   WardStoreData,
+  WeeklyStockChecklistForm,
+  WeeklyStockFormId,
 } from '../types/ward';
 import { addDaysIso, addMonthsIso, getTodayIso } from '../utils/dateUtils';
 
@@ -32,6 +37,16 @@ function loadInitialStore(): WardStoreData {
             Array.isArray(parsed.crashCarts) && parsed.crashCarts.length > 0
               ? parsed.crashCarts
               : initial.crashCarts,
+          pharmacyForms: parsed.pharmacyForms
+            ? {
+                ...createInitialPharmacyForms(),
+                ...parsed.pharmacyForms,
+                weeklyForms: {
+                  ...createInitialPharmacyForms().weeklyForms,
+                  ...(parsed.pharmacyForms.weeklyForms || {}),
+                },
+              }
+            : initial.pharmacyForms,
         };
       }
     }
@@ -408,6 +423,43 @@ export function useWardStore() {
     return newCart.id;
   };
 
+  // --- Pharmacy & Monthly Store Forms ---
+  const updateCadForm = (patch: Partial<CadChecklistForm>) => {
+    setData((prev) => ({
+      ...prev,
+      pharmacyForms: {
+        ...prev.pharmacyForms,
+        cad: { ...prev.pharmacyForms.cad, ...patch },
+      },
+    }));
+  };
+
+  const updateWeeklyStockForm = (
+    formId: WeeklyStockFormId,
+    patch: Partial<WeeklyStockChecklistForm>
+  ) => {
+    setData((prev) => ({
+      ...prev,
+      pharmacyForms: {
+        ...prev.pharmacyForms,
+        weeklyForms: {
+          ...prev.pharmacyForms.weeklyForms,
+          [formId]: { ...prev.pharmacyForms.weeklyForms[formId], ...patch },
+        },
+      },
+    }));
+  };
+
+  const updateMonthlyStoreForm = (patch: Partial<MonthlyStoreChecklistForm>) => {
+    setData((prev) => ({
+      ...prev,
+      pharmacyForms: {
+        ...prev.pharmacyForms,
+        monthlyStore: { ...prev.pharmacyForms.monthlyStore, ...patch },
+      },
+    }));
+  };
+
   // --- Backup & Reset ---
   const importBackupData = (imported: WardStoreData) => {
     const initial = createInitialWardData();
@@ -418,6 +470,16 @@ export function useWardStore() {
         Array.isArray(imported.crashCarts) && imported.crashCarts.length > 0
           ? imported.crashCarts
           : initial.crashCarts,
+      pharmacyForms: imported.pharmacyForms
+        ? {
+            ...createInitialPharmacyForms(),
+            ...imported.pharmacyForms,
+            weeklyForms: {
+              ...createInitialPharmacyForms().weeklyForms,
+              ...(imported.pharmacyForms.weeklyForms || {}),
+            },
+          }
+        : initial.pharmacyForms,
       lastBackupDate: getTodayIso(),
     });
   };
@@ -454,6 +516,9 @@ export function useWardStore() {
     updateCrashCart,
     updateCrashCartItemSlot,
     addCrashCart,
+    updateCadForm,
+    updateWeeklyStockForm,
+    updateMonthlyStoreForm,
     importBackupData,
     markBackupDone,
     resetToInitialData,

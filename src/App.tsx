@@ -8,6 +8,7 @@ import { InventoryModuleView } from './components/InventoryModuleView';
 import { MaintenanceFollowUpView } from './components/MaintenanceFollowUpView';
 import { OverviewScheduleView } from './components/OverviewScheduleView';
 import { OxygenCylinderView } from './components/OxygenCylinderView';
+import { PharmacyFormsView } from './components/PharmacyFormsView';
 import { type NavSectionId, Sidebar } from './components/Sidebar';
 import { CORE_CATEGORIES } from './data/initialWardData';
 import { useWardStore } from './hooks/useWardStore';
@@ -46,6 +47,9 @@ export default function App() {
     updateCrashCart,
     updateCrashCartItemSlot,
     addCrashCart,
+    updateCadForm,
+    updateWeeklyStockForm,
+    updateMonthlyStoreForm,
     importBackupData,
     markBackupDone,
     resetToInitialData,
@@ -123,6 +127,7 @@ export default function App() {
   const breadcrumbTitle = useMemo(() => {
     if (activeNav === 'schedule') return 'Weekly & Monthly Schedule';
     if (activeNav === 'crash-cart') return 'Crash Cart Weekly Check (Appendix 2)';
+    if (activeNav === 'pharmacy-forms') return 'Pharmacy & Store Printable Forms';
     if (activeNav === 'environmental') return 'Environmental Round & Fire Safety';
     if (activeNav === 'oxygen') return 'Weekly Oxygen Cylinders Tool';
     if (activeNav === 'maintenance') return 'Maintenance Follow-Up';
@@ -268,6 +273,18 @@ export default function App() {
                 onUpdateCart={updateCrashCart}
                 onUpdateSlot={updateCrashCartItemSlot}
                 onAddCart={addCrashCart}
+              />
+            )}
+
+            {activeNav === 'pharmacy-forms' && (
+              <PharmacyFormsView
+                forms={data.pharmacyForms}
+                inventory={data.inventory}
+                wardName={data.wardName}
+                defaultInspector={data.defaultInspector}
+                onUpdateCad={updateCadForm}
+                onUpdateWeeklyForm={updateWeeklyStockForm}
+                onUpdateMonthlyStore={updateMonthlyStoreForm}
               />
             )}
 

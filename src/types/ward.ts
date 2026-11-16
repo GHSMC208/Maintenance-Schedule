@@ -185,6 +185,68 @@ export interface CrashCartChecklist {
   qualityNurseDate: string;
 }
 
+export interface CadDrugRow {
+  id: string;
+  drugName: string;
+  expiryDate: string;
+  shifts: string[]; // length 21 (7 days x M, E, N)
+}
+
+export interface CadChecklistForm {
+  unit: string;
+  month: string;
+  dayDates: string[]; // length 7
+  rows: CadDrugRow[]; // 21 rows
+  currentShiftTl: string[]; // length 21
+  previousShiftTl: string[]; // length 21
+}
+
+export type WeeklyStockFormId = 'high-alert' | 'near-expiry' | 'refrigerator' | 'stock-meds';
+
+export interface WeeklyStockRow {
+  id: string;
+  slNo: string;
+  medicationName: string;
+  wardQuantity: string;
+  checks: { qty: string; expDate: string }[]; // length 5
+}
+
+export interface WeeklyStockChecklistForm {
+  id: WeeklyStockFormId;
+  title: string;
+  formCode: string;
+  location: string;
+  month: string;
+  weekDates: string[]; // length 5
+  rows: WeeklyStockRow[]; // 12 rows
+  staffSignatures: string[]; // length 5
+}
+
+export interface MonthlyStoreRow {
+  id: string;
+  stockNo: string;
+  description: string;
+  qtyAvailable: string;
+  expiryDate1: string;
+  expiryDate2: string;
+}
+
+export interface MonthlyStoreChecklistForm {
+  formCode: string;
+  ward: string;
+  monthYear: string;
+  rows: MonthlyStoreRow[]; // 17 rows
+  staffName: string;
+  signature: string;
+  date: string;
+}
+
+export interface PharmacyFormsState {
+  cad: CadChecklistForm;
+  weeklyForms: Record<WeeklyStockFormId, WeeklyStockChecklistForm>;
+  monthlyStore: MonthlyStoreChecklistForm;
+}
+
 export interface WardStoreData {
   wardName: string;
   defaultInspector: string;
@@ -196,5 +258,6 @@ export interface WardStoreData {
   oxygenCylinders: OxygenCylinder[];
   oxygenLogs: OxygenCheckLog[];
   crashCarts: CrashCartChecklist[];
+  pharmacyForms: PharmacyFormsState;
   lastBackupDate: string | null;
 }
