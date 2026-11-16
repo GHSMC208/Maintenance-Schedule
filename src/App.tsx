@@ -51,6 +51,8 @@ export default function App() {
     updateWeeklyStockForm,
     updateMonthlyStoreForm,
     updatePharmacyRequestForm,
+    addCustomRequestCatalogItem,
+    deleteCustomRequestCatalogItem,
     setAutoSyncNearExpiry,
     resyncNearExpiry,
     importBackupData,
@@ -290,6 +292,8 @@ export default function App() {
                 onUpdateWeeklyForm={updateWeeklyStockForm}
                 onUpdateMonthlyStore={updateMonthlyStoreForm}
                 onUpdateRequestForm={updatePharmacyRequestForm}
+                onAddRequestCatalogItem={addCustomRequestCatalogItem}
+                onDeleteRequestCatalogItem={deleteCustomRequestCatalogItem}
                 onToggleAutoSyncNearExpiry={setAutoSyncNearExpiry}
                 onResyncNearExpiry={resyncNearExpiry}
               />

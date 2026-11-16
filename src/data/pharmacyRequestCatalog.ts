@@ -1,12 +1,6 @@
-export type RequestCatalogSource = 'iv-lotion' | 'pharmacy-stock';
+import type { PharmacyCatalogItem, RequestCatalogSource } from '../types/ward';
 
-export interface PharmacyCatalogItem {
-  id: string;
-  catalog: RequestCatalogSource;
-  description: string;
-  itemCode: string;
-  defaultUom: string;
-}
+export type { PharmacyCatalogItem, RequestCatalogSource };
 
 const RAW_IV_LOTION_ITEMS: [string, string, string][] = [
   ['Aminoplasma for Adult - 500ml', '60-00010', 'Bottle'],

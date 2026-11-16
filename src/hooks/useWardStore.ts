@@ -12,6 +12,7 @@ import type {
   MonthlyStoreChecklistForm,
   OxygenCheckLog,
   OxygenCylinder,
+  PharmacyCatalogItem,
   PharmacyRequestForm,
   RoundCheckResult,
   ScheduleTask,
@@ -49,6 +50,11 @@ function loadInitialStore(): WardStoreData {
                 ...baseForms.requestForm,
                 ...(parsed.pharmacyForms.requestForm || {}),
               },
+              customRequestCatalogItems: Array.isArray(
+                parsed.pharmacyForms.customRequestCatalogItems
+              )
+                ? parsed.pharmacyForms.customRequestCatalogItems
+                : [],
             }
           : initial.pharmacyForms;
         return {
@@ -503,6 +509,43 @@ export function useWardStore() {
     }));
   };
 
+  const addCustomRequestCatalogItem = (
+    item: Omit<PharmacyCatalogItem, 'id' | 'isCustom'>
+  ): PharmacyCatalogItem => {
+    const created: PharmacyCatalogItem = {
+      id: `custom-cat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      catalog: item.catalog,
+      description: item.description.trim(),
+      itemCode: item.itemCode.trim(),
+      defaultUom: item.defaultUom.trim() || 'Unit',
+      isCustom: true,
+    };
+    setData((prev) => {
+      const existing = prev.pharmacyForms.customRequestCatalogItems || [];
+      return {
+        ...prev,
+        pharmacyForms: {
+          ...prev.pharmacyForms,
+          customRequestCatalogItems: [created, ...existing],
+        },
+      };
+    });
+    return created;
+  };
+
+  const deleteCustomRequestCatalogItem = (itemId: string) => {
+    setData((prev) => {
+      const existing = prev.pharmacyForms.customRequestCatalogItems || [];
+      return {
+        ...prev,
+        pharmacyForms: {
+          ...prev.pharmacyForms,
+          customRequestCatalogItems: existing.filter((it) => it.id !== itemId),
+        },
+      };
+    });
+  };
+
   const setAutoSyncNearExpiry = (enabled: boolean) => {
     setData((prev) => {
       const updated = {
@@ -545,6 +588,11 @@ export function useWardStore() {
             ...baseForms.requestForm,
             ...(imported.pharmacyForms.requestForm || {}),
           },
+          customRequestCatalogItems: Array.isArray(
+            imported.pharmacyForms.customRequestCatalogItems
+          )
+            ? imported.pharmacyForms.customRequestCatalogItems
+            : [],
         }
       : initial.pharmacyForms;
     setData({
@@ -592,6 +640,8 @@ export function useWardStore() {
     updateWeeklyStockForm,
     updateMonthlyStoreForm,
     updatePharmacyRequestForm,
+    addCustomRequestCatalogItem,
+    deleteCustomRequestCatalogItem,
     setAutoSyncNearExpiry,
     resyncNearExpiry,
     importBackupData,

@@ -13,7 +13,6 @@ import {
 import { useMemo, useState } from 'react';
 import { createInitialPharmacyForms } from '../data/pharmacyFormsSeed';
 import {
-  ALL_PHARMACY_REQUEST_CATALOG_ITEMS,
   IV_LOTION_ITEMS,
   PHARMACY_STOCK_ITEMS,
   type PharmacyCatalogItem,
@@ -61,6 +60,10 @@ interface PharmacyFormsViewProps {
   ) => void;
   onUpdateMonthlyStore: (patch: Partial<MonthlyStoreChecklistForm>) => void;
   onUpdateRequestForm: (patch: Partial<PharmacyRequestForm>) => void;
+  onAddRequestCatalogItem: (
+    item: Omit<PharmacyCatalogItem, 'id' | 'isCustom'>
+  ) => PharmacyCatalogItem;
+  onDeleteRequestCatalogItem: (itemId: string) => void;
   onToggleAutoSyncNearExpiry: (enabled: boolean) => void;
   onResyncNearExpiry: () => void;
 }
@@ -90,6 +93,8 @@ export function PharmacyFormsView({
   onUpdateWeeklyForm,
   onUpdateMonthlyStore,
   onUpdateRequestForm,
+  onAddRequestCatalogItem,
+  onDeleteRequestCatalogItem,
   onToggleAutoSyncNearExpiry,
   onResyncNearExpiry,
 }: PharmacyFormsViewProps) {
@@ -561,8 +566,11 @@ export function PharmacyFormsView({
           {activeForm === 'request-form' && (
             <PharmacyRequestEditor
               form={forms.requestForm}
+              customCatalogItems={forms.customRequestCatalogItems || []}
               onChange={onUpdateRequestForm}
               onAddRows={handleAddRowsToActiveForm}
+              onAddCatalogItem={onAddRequestCatalogItem}
+              onDeleteCatalogItem={onDeleteRequestCatalogItem}
               today={today}
             />
           )}
@@ -1313,28 +1321,58 @@ function FormRowControls({
 /* ---------- PHARMACY REQUEST FORM INTERACTIVE EDITOR ---------- */
 function PharmacyRequestEditor({
   form,
+  customCatalogItems,
   onChange,
   onAddRows,
+  onAddCatalogItem,
+  onDeleteCatalogItem,
   today,
 }: {
   form: PharmacyRequestForm;
+  customCatalogItems: PharmacyCatalogItem[];
   onChange: (patch: Partial<PharmacyRequestForm>) => void;
   onAddRows: (count: number) => void;
+  onAddCatalogItem: (item: Omit<PharmacyCatalogItem, 'id' | 'isCustom'>) => PharmacyCatalogItem;
+  onDeleteCatalogItem: (itemId: string) => void;
   today: string;
 }) {
   const [catalogFilter, setCatalogFilter] = useState<'all' | RequestCatalogSource>('all');
   const [catalogSearch, setCatalogSearch] = useState('');
   const [pickerOpen, setPickerOpen] = useState(true);
 
+  const [addListFormOpen, setAddListFormOpen] = useState(false);
+  const [newItemCatalog, setNewItemCatalog] = useState<RequestCatalogSource>('iv-lotion');
+  const [newItemCode, setNewItemCode] = useState('');
+  const [newItemDescription, setNewItemDescription] = useState('');
+  const [newItemUom, setNewItemUom] = useState('');
+
   const pageCount = Math.max(1, Math.ceil(form.rows.length / REQUEST_ROWS_PER_PAGE));
+
+  const ivLotionItems = useMemo(
+    () => [...customCatalogItems.filter((it) => it.catalog === 'iv-lotion'), ...IV_LOTION_ITEMS],
+    [customCatalogItems]
+  );
+
+  const pharmacyStockItems = useMemo(
+    () => [
+      ...customCatalogItems.filter((it) => it.catalog === 'pharmacy-stock'),
+      ...PHARMACY_STOCK_ITEMS,
+    ],
+    [customCatalogItems]
+  );
+
+  const allCatalogItems = useMemo(
+    () => [...customCatalogItems, ...IV_LOTION_ITEMS, ...PHARMACY_STOCK_ITEMS],
+    [customCatalogItems]
+  );
 
   const filteredCatalog = useMemo(() => {
     const base =
       catalogFilter === 'iv-lotion'
-        ? IV_LOTION_ITEMS
+        ? ivLotionItems
         : catalogFilter === 'pharmacy-stock'
-          ? PHARMACY_STOCK_ITEMS
-          : ALL_PHARMACY_REQUEST_CATALOG_ITEMS;
+          ? pharmacyStockItems
+          : allCatalogItems;
     const q = catalogSearch.trim().toLowerCase();
     if (!q) return base;
     return base.filter(
@@ -1342,7 +1380,7 @@ function PharmacyRequestEditor({
         item.description.toLowerCase().includes(q) ||
         item.itemCode.toLowerCase().includes(q)
     );
-  }, [catalogFilter, catalogSearch]);
+  }, [catalogFilter, catalogSearch, ivLotionItems, pharmacyStockItems, allCatalogItems]);
 
   const addedCountsByCodeDesc = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1356,7 +1394,7 @@ function PharmacyRequestEditor({
     return counts;
   }, [form.rows]);
 
-  const handleAddCatalogItem = (item: PharmacyCatalogItem) => {
+  const handleAddCatalogItemToRequest = (item: PharmacyCatalogItem) => {
     const nextRows = [...form.rows];
     const emptyIdx = nextRows.findIndex(
       (r) => !r.itemCode.trim() && !r.description.trim()
@@ -1384,6 +1422,39 @@ function PharmacyRequestEditor({
     onChange({ rows: nextRows });
   };
 
+  const handleToggleAddListForm = () => {
+    if (!addListFormOpen) {
+      setPickerOpen(true);
+      if (catalogFilter === 'pharmacy-stock') {
+        setNewItemCatalog('pharmacy-stock');
+      } else if (catalogFilter === 'iv-lotion') {
+        setNewItemCatalog('iv-lotion');
+      }
+    }
+    setAddListFormOpen((v) => !v);
+  };
+
+  const handleSaveNewCatalogItem = (alsoInsertIntoForm: boolean) => {
+    const desc = newItemDescription.trim();
+    if (!desc) return;
+    const created = onAddCatalogItem({
+      catalog: newItemCatalog,
+      itemCode: newItemCode.trim(),
+      description: desc,
+      defaultUom: newItemUom.trim() || 'Unit',
+    });
+    if (alsoInsertIntoForm) {
+      handleAddCatalogItemToRequest(created);
+    }
+    setNewItemCode('');
+    setNewItemDescription('');
+    setNewItemUom('');
+    setCatalogSearch('');
+    if (catalogFilter !== 'all' && catalogFilter !== newItemCatalog) {
+      setCatalogFilter(newItemCatalog);
+    }
+  };
+
   const updateRowField = (
     rIdx: number,
     field: keyof Omit<PharmacyRequestItemRow, 'id'>,
@@ -1408,21 +1479,150 @@ function PharmacyRequestEditor({
               Add Items from Official Catalogs
             </h3>
             <p className="text-xs text-slate-500">
-              Select from IV &amp; Lotion Items ({IV_LOTION_ITEMS.length}) or Pharmacy Stock Items (
-              {PHARMACY_STOCK_ITEMS.length}) to populate item code and description automatically.
+              Select from IV &amp; Lotion Items ({ivLotionItems.length}) or Pharmacy Stock Items (
+              {pharmacyStockItems.length}) or add new items directly to either list.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setPickerOpen((v) => !v)}
-            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-md cursor-pointer"
-          >
-            {pickerOpen ? 'Hide Catalog' : 'Show Catalog'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleAddListForm}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                addListFormOpen
+                  ? 'bg-teal-800 text-white'
+                  : 'bg-teal-700 text-white hover:bg-teal-800'
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Item to List
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickerOpen((v) => !v)}
+              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-md cursor-pointer"
+            >
+              {pickerOpen ? 'Hide Catalog' : 'Show Catalog'}
+            </button>
+          </div>
         </div>
 
         {pickerOpen && (
           <div className="p-4 space-y-3">
+            {addListFormOpen && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSaveNewCatalogItem(false);
+                }}
+                className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-slate-800">
+                    Add New Item to Catalog List
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddListFormOpen(false)}
+                    className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                  <div className="sm:col-span-3">
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Target List
+                    </label>
+                    <select
+                      value={newItemCatalog}
+                      onChange={(e) => setNewItemCatalog(e.target.value as RequestCatalogSource)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    >
+                      <option value="iv-lotion">IV &amp; Lotion Items</option>
+                      <option value="pharmacy-stock">Pharmacy Stock Items</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Item Code
+                    </label>
+                    <input
+                      type="text"
+                      value={newItemCode}
+                      onChange={(e) => setNewItemCode(e.target.value)}
+                      placeholder="e.g., 60-01875"
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-5">
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Item Description *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newItemDescription}
+                      onChange={(e) => setNewItemDescription(e.target.value)}
+                      placeholder="e.g., Ringer Lactate Solution - 500ml"
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      UoM
+                    </label>
+                    <input
+                      type="text"
+                      list="pharmacy-request-uom-list"
+                      value={newItemUom}
+                      onChange={(e) => setNewItemUom(e.target.value)}
+                      placeholder="Bottle / Amp"
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    />
+                    <datalist id="pharmacy-request-uom-list">
+                      <option value="Bottle" />
+                      <option value="Bag" />
+                      <option value="Amp" />
+                      <option value="Vial" />
+                      <option value="PFS" />
+                      <option value="Tab" />
+                      <option value="Tube" />
+                      <option value="Jar" />
+                      <option value="Set" />
+                      <option value="Gallon" />
+                      <option value="Supp" />
+                      <option value="Neb" />
+                      <option value="Can" />
+                    </datalist>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="submit"
+                    disabled={!newItemDescription.trim()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Save to List
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!newItemDescription.trim()}
+                    onClick={() => handleSaveNewCatalogItem(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Save &amp; Add to Request
+                  </button>
+                </div>
+              </form>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
                 <button
@@ -1434,7 +1634,7 @@ function PharmacyRequestEditor({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  All ({ALL_PHARMACY_REQUEST_CATALOG_ITEMS.length})
+                  All ({allCatalogItems.length})
                 </button>
                 <button
                   type="button"
@@ -1445,7 +1645,7 @@ function PharmacyRequestEditor({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  IV &amp; Lotion Items ({IV_LOTION_ITEMS.length})
+                  IV &amp; Lotion Items ({ivLotionItems.length})
                 </button>
                 <button
                   type="button"
@@ -1456,7 +1656,7 @@ function PharmacyRequestEditor({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Pharmacy Stock Items ({PHARMACY_STOCK_ITEMS.length})
+                  Pharmacy Stock Items ({pharmacyStockItems.length})
                 </button>
               </div>
 
@@ -1487,9 +1687,11 @@ function PharmacyRequestEditor({
                       className="px-3 py-2 flex items-center justify-between gap-3 hover:bg-slate-50 text-xs"
                     >
                       <div className="min-w-0 flex-1 flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
-                          {item.itemCode}
-                        </span>
+                        {item.itemCode && (
+                          <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                            {item.itemCode}
+                          </span>
+                        )}
                         <span className="text-slate-900 font-medium truncate">
                           {item.description}
                         </span>
@@ -1497,29 +1699,46 @@ function PharmacyRequestEditor({
                           {item.catalog === 'iv-lotion' ? 'IV & Lotion' : 'Pharmacy Stock'} ·{' '}
                           {item.defaultUom}
                         </span>
+                        {item.isCustom && (
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-teal-800 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded shrink-0">
+                            Custom
+                          </span>
+                        )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleAddCatalogItem(item)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors shrink-0 cursor-pointer ${
-                          addedCount > 0
-                            ? 'bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100'
-                            : 'bg-teal-700 text-white hover:bg-teal-800'
-                        }`}
-                      >
-                        {addedCount > 0 ? (
-                          <>
-                            <Check className="w-3 h-3" />
-                            Added ({addedCount})
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3 h-3" />
-                            Add
-                          </>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {item.isCustom && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteCatalogItem(item.id)}
+                            title="Remove custom item from list"
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddCatalogItemToRequest(item)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+                            addedCount > 0
+                              ? 'bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100'
+                              : 'bg-teal-700 text-white hover:bg-teal-800'
+                          }`}
+                        >
+                          {addedCount > 0 ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              Added ({addedCount})
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3 h-3" />
+                              Add
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   );
                 })

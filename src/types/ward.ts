@@ -275,12 +275,24 @@ export interface PharmacyRequestForm {
   receiverSign: string;
 }
 
+export type RequestCatalogSource = 'iv-lotion' | 'pharmacy-stock';
+
+export interface PharmacyCatalogItem {
+  id: string;
+  catalog: RequestCatalogSource;
+  description: string;
+  itemCode: string;
+  defaultUom: string;
+  isCustom?: boolean;
+}
+
 export interface PharmacyFormsState {
   autoSyncNearExpiry?: boolean;
   cad: CadChecklistForm;
   weeklyForms: Record<WeeklyStockFormId, WeeklyStockChecklistForm>;
   monthlyStore: MonthlyStoreChecklistForm;
   requestForm: PharmacyRequestForm;
+  customRequestCatalogItems?: PharmacyCatalogItem[];
 }
 
 export interface WardStoreData {

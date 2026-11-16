@@ -145,5 +145,6 @@ export function createInitialPharmacyForms(): PharmacyFormsState {
     },
     monthlyStore: createInitialMonthlyStoreForm(),
     requestForm: createInitialPharmacyRequestForm(),
+    customRequestCatalogItems: [],
   };
 }
