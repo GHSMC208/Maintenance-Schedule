@@ -21,6 +21,7 @@ import {
   MONTH_NAMES,
   WEEKDAY_LABELS,
 } from '../data/oxygenCylinderSeed';
+import type { PermissionLevel } from '../types/auth';
 import type {
   CheckingWeekday,
   CylinderMonthlySchedule,
@@ -40,6 +41,7 @@ import {
   type CylinderPrintWeekScope,
   OxygenCylinderPrintView,
 } from './OxygenCylinderPrintView';
+import { ReadOnlyBanner, ReadOnlySurface } from './ReadOnlyBanner';
 
 interface OxygenCylinderViewProps {
   cylinders: OxygenCylinder[];
@@ -75,6 +77,7 @@ interface OxygenCylinderViewProps {
   onUpdateCylinder: (cylinderId: string, patch: Partial<OxygenCylinder>) => void;
   onAddCylinder: (cyl: Omit<OxygenCylinder, 'id'>) => void;
   onDeleteCylinder: (cylinderId: string) => void;
+  permission?: PermissionLevel;
 }
 
 export function OxygenCylinderView({
@@ -91,7 +94,10 @@ export function OxygenCylinderView({
   onUpdateCylinder,
   onAddCylinder,
   onDeleteCylinder,
+  permission = 'full',
 }: OxygenCylinderViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const today = getTodayIso();
   const schedule = useMemo(
     () => cylinderSchedule || createInitialCylinderSchedule(today),
@@ -156,6 +162,7 @@ export function OxygenCylinderView({
   }, [cylinders, today]);
 
   const openCheckModal = (cyl: OxygenCylinder) => {
+    if (!canEdit) return;
     const rec = activeWeek?.records?.[cyl.id];
     const weekStaffNames = (activeWeek?.assignedStaff || [])
       .map((s) => s.staffName.trim())
@@ -173,7 +180,7 @@ export function OxygenCylinderView({
 
   const handleSaveCheck = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!checkingCylinder) return;
+    if (!canEdit || !checkingCylinder) return;
     onLogCheck(checkingCylinder.id, {
       pressurePsi: Math.max(0, Math.min(2500, Number(pressureInput) || 0)),
       valveAndLeakCheck: valveOk,
@@ -188,6 +195,7 @@ export function OxygenCylinderView({
   };
 
   const openAddCylinder = () => {
+    if (!canFull) return;
     setEditingCylinder(null);
     setFormCode('');
     setFormLocation(schedule.wardLocation || '208 CCU');
@@ -206,6 +214,7 @@ export function OxygenCylinderView({
   };
 
   const openEditCylinder = (cyl: OxygenCylinder) => {
+    if (!canEdit) return;
     setEditingCylinder(cyl);
     setFormCode(cyl.cylinderCode);
     setFormLocation(cyl.location);
@@ -227,6 +236,7 @@ export function OxygenCylinderView({
 
   const handleSaveCylinder = (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingCylinder ? !canEdit : !canFull) return;
     if (!formCode.trim()) return;
     const liters = Math.max(100, Number(formSizeLiters) || 500);
     const derivedSize: OxygenCylinder['size'] =
@@ -267,6 +277,7 @@ export function OxygenCylinderView({
     field: keyof CylinderWeekStaffMember,
     value: string
   ) => {
+    if (!canEdit) return;
     const wk = schedule.weeks.find((w) => w.weekNumber === weekNumber);
     if (!wk) return;
     const next = wk.assignedStaff.map((st, idx) =>
@@ -276,6 +287,7 @@ export function OxygenCylinderView({
   };
 
   const addStaffToWeek = (weekNumber: number) => {
+    if (!canEdit) return;
     const wk = schedule.weeks.find((w) => w.weekNumber === weekNumber);
     if (!wk) return;
     const next: CylinderWeekStaffMember[] = [
@@ -291,6 +303,7 @@ export function OxygenCylinderView({
   };
 
   const removeStaffFromWeek = (weekNumber: number, staffIdx: number) => {
+    if (!canEdit) return;
     const wk = schedule.weeks.find((w) => w.weekNumber === weekNumber);
     if (!wk || wk.assignedStaff.length <= 1) return;
     onUpdateWeekStaff(
@@ -304,6 +317,7 @@ export function OxygenCylinderView({
 
   return (
     <div className="space-y-5">
+      <ReadOnlyBanner permission={permission} sectionLabel="Oxygen Cylinders" />
       {/* Header Summary & Monthly Schedule / Print Controls */}
       <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -357,6 +371,7 @@ export function OxygenCylinderView({
         {/* Monthly Schedule Bar & Print Controls */}
         <div className="pt-4 border-t border-slate-200 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
+            <ReadOnlySurface readOnly={!canEdit}>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 flex-1 min-w-[320px] max-w-3xl">
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -420,6 +435,7 @@ export function OxygenCylinderView({
                 </select>
               </div>
             </div>
+            </ReadOnlySurface>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <select
@@ -535,6 +551,7 @@ export function OxygenCylinderView({
 
       {/* Assigned Staff per Week Schedule Card */}
       {viewMode === 'editor' && (
+        <ReadOnlySurface readOnly={!canEdit}>
         <section className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -551,14 +568,16 @@ export function OxygenCylinderView({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onCopyWeek1StaffToAll}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              Copy Week 1 Staff to All Weeks
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={onCopyWeek1StaffToAll}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                Copy Week 1 Staff to All Weeks
+              </button>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -588,14 +607,16 @@ export function OxygenCylinderView({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => addStaffToWeek(wk.weekNumber)}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Add Staff to Week {wk.weekNumber}
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => addStaffToWeek(wk.weekNumber)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Staff to Week {wk.weekNumber}
+                    </button>
+                  )}
                 </div>
 
                 <div className="p-2.5 space-y-2 bg-white">
@@ -631,15 +652,17 @@ export function OxygenCylinderView({
                         placeholder="Signature / Initials"
                         className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
                       />
-                      <button
-                        type="button"
-                        onClick={() => removeStaffFromWeek(wk.weekNumber, stIdx)}
-                        disabled={wk.assignedStaff.length <= 1}
-                        title="Remove staff member"
-                        className="p-1.5 text-slate-400 hover:text-rose-700 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors cursor-pointer justify-self-center"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => removeStaffFromWeek(wk.weekNumber, stIdx)}
+                          disabled={wk.assignedStaff.length <= 1}
+                          title="Remove staff member"
+                          className="p-1.5 text-slate-400 hover:text-rose-700 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors cursor-pointer justify-self-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -647,6 +670,7 @@ export function OxygenCylinderView({
             ))}
           </div>
         </section>
+        </ReadOnlySurface>
       )}
 
       {/* Cylinders Table (Editor Mode) */}
@@ -675,16 +699,19 @@ export function OxygenCylinderView({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={openAddCylinder}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Cylinder
-            </button>
+            {canFull && (
+              <button
+                type="button"
+                onClick={openAddCylinder}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Cylinder
+              </button>
+            )}
           </div>
 
+          <ReadOnlySurface readOnly={!canEdit}>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -834,30 +861,36 @@ export function OxygenCylinderView({
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-right">
                         <div className="inline-flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openCheckModal(cyl)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                          >
-                            <ClipboardCheck className="w-3.5 h-3.5" />
-                            Check W{safeActiveWeekNum}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEditCylinder(cyl)}
-                            title="Edit cylinder master details"
-                            className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteCylinder(cyl.id)}
-                            title="Remove cylinder"
-                            className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canEdit && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openCheckModal(cyl)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                              >
+                                <ClipboardCheck className="w-3.5 h-3.5" />
+                                Check W{safeActiveWeekNum}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditCylinder(cyl)}
+                                title="Edit cylinder master details"
+                                className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                          {canFull && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteCylinder(cyl.id)}
+                              title="Remove cylinder"
+                              className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -866,6 +899,7 @@ export function OxygenCylinderView({
               </tbody>
             </table>
           </div>
+          </ReadOnlySurface>
         </section>
       )}
 
@@ -927,7 +961,7 @@ export function OxygenCylinderView({
       </div>
 
       {/* Log Weekly Check Modal */}
-      {checkingCylinder && (
+      {canEdit && checkingCylinder && (
         <div className="no-print fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-lg w-full max-w-md shadow-lg">
             <div className="px-5 py-4 border-b border-slate-200">
@@ -1057,7 +1091,7 @@ export function OxygenCylinderView({
       )}
 
       {/* Add / Edit Cylinder Modal */}
-      {showCylModal && (
+      {(canEdit || canFull) && showCylModal && (
         <div className="no-print fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-lg w-full max-w-lg shadow-lg">
             <div className="px-5 py-4 border-b border-slate-200">

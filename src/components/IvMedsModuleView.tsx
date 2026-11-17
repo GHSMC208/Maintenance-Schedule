@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { IV_MEDS_GROUPS, inferIvMedsGroup, isIvMedNearExpiry } from '../data/ivMedsSeed';
+import type { PermissionLevel } from '../types/auth';
 import type {
   CategoryMeta,
   InventoryItem,
@@ -30,6 +31,7 @@ import {
   getTodayIso,
 } from '../utils/dateUtils';
 import { IvMedsPrintView } from './IvMedsPrintView';
+import { ReadOnlyBanner, ReadOnlySurface } from './ReadOnlyBanner';
 
 interface IvMedsModuleViewProps {
   category: CategoryMeta;
@@ -50,6 +52,7 @@ interface IvMedsModuleViewProps {
     outcome: 'completed' | 'follow-up',
     notes?: string
   ) => void;
+  permission?: PermissionLevel;
 }
 
 export function IvMedsModuleView({
@@ -66,7 +69,10 @@ export function IvMedsModuleView({
   onUpdateAuditMeta,
   onResyncFromForms,
   onCompleteMonthlyTask,
+  permission = 'full',
 }: IvMedsModuleViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const today = getTodayIso();
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [activeGroupTab, setActiveGroupTab] = useState<'all' | IvMedsGroupId>('all');
@@ -152,6 +158,7 @@ export function IvMedsModuleView({
   const taskDueState = monthlyTask ? getTaskDueState(monthlyTask, today) : null;
 
   const openAdd = (presetGroup?: IvMedsGroupId) => {
+    if (!canFull) return;
     const grp = presetGroup || (activeGroupTab === 'all' ? 'iv-fluids' : activeGroupTab);
     setEditingItem(null);
     setFormGroup(grp);
@@ -177,6 +184,7 @@ export function IvMedsModuleView({
   };
 
   const openEdit = (item: InventoryItem) => {
+    if (!canEdit) return;
     setEditingItem(item);
     setFormGroup(item.medGroup || inferIvMedsGroup(item));
     setFormName(item.name);
@@ -192,6 +200,7 @@ export function IvMedsModuleView({
 
   const handleSaveItem = (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingItem ? !canEdit : !canFull) return;
     if (!formName.trim()) return;
 
     const payload: Omit<InventoryItem, 'id'> = {
@@ -223,6 +232,7 @@ export function IvMedsModuleView({
     field: keyof Omit<IvMedsStaffAssignment, 'id'>,
     val: string
   ) => {
+    if (!canEdit) return;
     const next = auditMeta.staffAssignments.map((s, i) =>
       i === idx ? { ...s, [field]: val } : s
     );
@@ -230,6 +240,7 @@ export function IvMedsModuleView({
   };
 
   const addStaffRow = () => {
+    if (!canEdit) return;
     const next: IvMedsStaffAssignment[] = [
       ...auditMeta.staffAssignments,
       {
@@ -245,6 +256,7 @@ export function IvMedsModuleView({
   };
 
   const removeStaffRow = (idx: number) => {
+    if (!canEdit) return;
     if (auditMeta.staffAssignments.length <= 1) return;
     onUpdateAuditMeta({
       staffAssignments: auditMeta.staffAssignments.filter((_, i) => i !== idx),
@@ -252,7 +264,7 @@ export function IvMedsModuleView({
   };
 
   const handleCompleteMonthlyAudit = () => {
-    if (!monthlyTask || !onCompleteMonthlyTask) return;
+    if (!canEdit || !monthlyTask || !onCompleteMonthlyTask) return;
     const names = auditMeta.staffAssignments
       .map((s) => s.staffName.trim())
       .filter(Boolean);
@@ -273,6 +285,7 @@ export function IvMedsModuleView({
 
   return (
     <div className="space-y-5">
+      <ReadOnlyBanner permission={permission} sectionLabel={category.label} />
       {/* Section Header & Summary Strip */}
       <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -356,14 +369,16 @@ export function IvMedsModuleView({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={onResyncFromForms}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Sync From Pharmacy Forms
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={onResyncFromForms}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Sync From Pharmacy Forms
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -397,6 +412,7 @@ export function IvMedsModuleView({
 
       {/* Monthly Scheduled Audit & 3+ Assigned Staff Section */}
       {viewMode === 'editor' && (
+        <ReadOnlySurface readOnly={!canEdit}>
         <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -417,32 +433,34 @@ export function IvMedsModuleView({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={addStaffRow}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Staff
-              </button>
-              {monthlyTask && onCompleteMonthlyTask && (
+            {canEdit && (
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleCompleteMonthlyAudit}
-                  disabled={assignedStaffReadyCount < 1}
-                  title={
-                    assignedStaffReadyCount < 1
-                      ? 'Assign at least 1 staff name before completing monthly audit'
-                      : 'Mark monthly audit completed and advance next due date by 1 month'
-                  }
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-45 disabled:pointer-events-none rounded-md transition-colors cursor-pointer"
+                  onClick={addStaffRow}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
                 >
-                  <CalendarCheck className="w-3.5 h-3.5" />
-                  Complete Monthly Audit
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Staff
                 </button>
-              )}
-            </div>
+                {monthlyTask && onCompleteMonthlyTask && (
+                  <button
+                    type="button"
+                    onClick={handleCompleteMonthlyAudit}
+                    disabled={assignedStaffReadyCount < 1}
+                    title={
+                      assignedStaffReadyCount < 1
+                        ? 'Assign at least 1 staff name before completing monthly audit'
+                        : 'Mark monthly audit completed and advance next due date by 1 month'
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-45 disabled:pointer-events-none rounded-md transition-colors cursor-pointer"
+                  >
+                    <CalendarCheck className="w-3.5 h-3.5" />
+                    Complete Monthly Audit
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
@@ -557,19 +575,21 @@ export function IvMedsModuleView({
                       />
                     </td>
                     <td className="p-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => removeStaffRow(idx)}
-                        disabled={auditMeta.staffAssignments.length <= 1}
-                        title={
-                          auditMeta.staffAssignments.length <= 1
-                            ? 'At least 1 assigned staff required'
-                            : 'Remove staff member'
-                        }
-                        className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => removeStaffRow(idx)}
+                          disabled={auditMeta.staffAssignments.length <= 1}
+                          title={
+                            auditMeta.staffAssignments.length <= 1
+                              ? 'At least 1 assigned staff required'
+                              : 'Remove staff member'
+                          }
+                          className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -577,6 +597,7 @@ export function IvMedsModuleView({
             </table>
           </div>
         </div>
+        </ReadOnlySurface>
       )}
 
       {/* 4-List Filter Bar & Grouped Inventory Tables */}
@@ -636,14 +657,16 @@ export function IvMedsModuleView({
                     <p className="text-xs text-slate-500 mt-0.5">{group.description}</p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => openAdd(group.id)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add to {group.shortLabel}
-                  </button>
+                  {canFull && (
+                    <button
+                      type="button"
+                      onClick={() => openAdd(group.id)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add to {group.shortLabel}
+                    </button>
+                  )}
                 </div>
 
                 {listItems.length === 0 ? (
@@ -706,18 +729,20 @@ export function IvMedsModuleView({
                               </td>
                               <td className="py-2.5 px-3 whitespace-nowrap">
                                 <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    aria-label="Decrease quantity"
-                                    onClick={() =>
-                                      onUpdateItem(item.id, {
-                                        quantity: Math.max(0, item.quantity - 1),
-                                      })
-                                    }
-                                    className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
-                                  >
-                                    <Minus className="w-3 h-3" />
-                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      type="button"
+                                      aria-label="Decrease quantity"
+                                      onClick={() =>
+                                        onUpdateItem(item.id, {
+                                          quantity: Math.max(0, item.quantity - 1),
+                                        })
+                                      }
+                                      className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </button>
+                                  )}
                                   <span
                                     className={`font-mono tabular-nums text-xs font-semibold min-w-[68px] text-center ${
                                       isLowStock ? 'text-amber-700' : 'text-slate-900'
@@ -725,16 +750,18 @@ export function IvMedsModuleView({
                                   >
                                     {item.quantity} / {item.parLevel} {item.unitOfMeasure}
                                   </span>
-                                  <button
-                                    type="button"
-                                    aria-label="Increase quantity"
-                                    onClick={() =>
-                                      onUpdateItem(item.id, { quantity: item.quantity + 1 })
-                                    }
-                                    className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      type="button"
+                                      aria-label="Increase quantity"
+                                      onClick={() =>
+                                        onUpdateItem(item.id, { quantity: item.quantity + 1 })
+                                      }
+                                      className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                               <td className="py-2.5 px-3 whitespace-nowrap text-xs">
@@ -770,29 +797,35 @@ export function IvMedsModuleView({
                               </td>
                               <td className="py-2.5 px-4 whitespace-nowrap text-right">
                                 <div className="inline-flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => onVerifyItem(item.id, defaultInspector)}
-                                    className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                                  >
-                                    Verify
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => openEdit(item)}
-                                    title="Edit item"
-                                    className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => onDeleteItem(item.id)}
-                                    title="Delete item"
-                                    className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {canEdit && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => onVerifyItem(item.id, defaultInspector)}
+                                        className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                                      >
+                                        Verify
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openEdit(item)}
+                                        title="Edit item"
+                                        className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                  {canFull && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onDeleteItem(item.id)}
+                                      title="Delete item"
+                                      className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -826,7 +859,7 @@ export function IvMedsModuleView({
       </div>
 
       {/* Add / Edit Item Modal */}
-      {showModal && (
+      {(canEdit || canFull) && showModal && (
         <div className="no-print fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-lg w-full max-w-lg shadow-lg">
             <div className="px-5 py-4 border-b border-slate-200">

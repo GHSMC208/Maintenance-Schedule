@@ -22,6 +22,15 @@
   }
 }
 
+.rbac-view-only input:not([data-allow-readonly='true']),
+.rbac-view-only textarea,
+.rbac-view-only select:not([data-allow-readonly='true']) {
+  pointer-events: none;
+  background-color: #f8fafc;
+  color: #475569;
+  opacity: 0.85;
+}
+
 /* Official Appendix 2 Crash Cart Form Print Styles */
 .appendix2-sheet {
   font-family: "Times New Roman", Times, Georgia, serif;

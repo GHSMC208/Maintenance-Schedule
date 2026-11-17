@@ -20,6 +20,7 @@ import {
   ENVIRONMENTAL_DOMAIN_FILTERS,
   ENVIRONMENTAL_GH0030_GROUPS,
 } from '../data/environmentalRoundSeed';
+import type { PermissionLevel } from '../types/auth';
 import type {
   EnvironmentalCheckItem,
   EnvironmentalFollowUpRow,
@@ -32,6 +33,7 @@ import type {
 } from '../types/ward';
 import { getTodayIso } from '../utils/dateUtils';
 import { EnvironmentalRoundPrintView } from './EnvironmentalRoundPrintView';
+import { ReadOnlyBanner, ReadOnlySurface } from './ReadOnlyBanner';
 
 interface EnvironmentalRoundViewProps {
   checks: EnvironmentalCheckItem[];
@@ -57,6 +59,7 @@ interface EnvironmentalRoundViewProps {
   onAddCheck: (check: Omit<EnvironmentalCheckItem, 'id'>) => void;
   onDeleteCheck: (checkId: string) => void;
   onOpenMaintenance?: () => void;
+  permission?: PermissionLevel;
 }
 
 function getEffectiveResponse(item: EnvironmentalCheckItem): EnvironmentalResponse | undefined {
@@ -78,7 +81,10 @@ export function EnvironmentalRoundView({
   onAddCheck,
   onDeleteCheck,
   onOpenMaintenance,
+  permission = 'full',
 }: EnvironmentalRoundViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const today = getTodayIso();
   const meta = useMemo(
     () => roundMeta || createInitialEnvironmentalRoundMeta(today),
@@ -176,6 +182,7 @@ export function EnvironmentalRoundView({
 
   // --- Staff Assignment Handlers ---
   const handleAddStaff = () => {
+    if (!canEdit) return;
     const [y, m, d] = today.split('-');
     const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
     const next: StoreStaffAssignment = {
@@ -190,6 +197,7 @@ export function EnvironmentalRoundView({
   };
 
   const handleUpdateStaff = (id: string, patch: Partial<StoreStaffAssignment>) => {
+    if (!canEdit) return;
     onUpdateRoundMeta({
       staffAssignments: meta.staffAssignments.map((st) =>
         st.id === id ? { ...st, ...patch } : st
@@ -198,6 +206,7 @@ export function EnvironmentalRoundView({
   };
 
   const handleRemoveStaff = (id: string) => {
+    if (!canEdit) return;
     if (meta.staffAssignments.length <= 1) return;
     onUpdateRoundMeta({
       staffAssignments: meta.staffAssignments.filter((st) => st.id !== id),
@@ -206,6 +215,7 @@ export function EnvironmentalRoundView({
 
   // --- Work Order Follow-Up Handlers ---
   const handleAddFollowUpRow = (prefillIssue = '') => {
+    if (!canEdit) return;
     const [y, m, d] = today.split('-');
     const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
     const newRow: EnvironmentalFollowUpRow = {
@@ -222,18 +232,21 @@ export function EnvironmentalRoundView({
   };
 
   const handleUpdateFollowUpRow = (id: string, patch: Partial<EnvironmentalFollowUpRow>) => {
+    if (!canEdit) return;
     onUpdateRoundMeta({
       followUpRows: meta.followUpRows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     });
   };
 
   const handleDeleteFollowUpRow = (id: string) => {
+    if (!canFull) return;
     onUpdateRoundMeta({
       followUpRows: meta.followUpRows.filter((r) => r.id !== id),
     });
   };
 
   const handleSyncNoItemsToFollowUp = () => {
+    if (!canEdit) return;
     const existingIssues = new Set(
       meta.followUpRows.map((r) => r.issue.trim().toLowerCase())
     );
@@ -268,6 +281,7 @@ export function EnvironmentalRoundView({
 
   const handleAddCustomPoint = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canFull) return;
     if (!newTitle.trim()) return;
     onAddCheck({
       section: newDomain,
@@ -287,6 +301,7 @@ export function EnvironmentalRoundView({
   };
 
   const handleRaiseTicket = (item: EnvironmentalCheckItem) => {
+    if (!canEdit) return;
     onUpdateCheck(
       item.id,
       'action-needed',
@@ -300,6 +315,7 @@ export function EnvironmentalRoundView({
 
   return (
     <div className="space-y-5">
+      <ReadOnlyBanner permission={permission} sectionLabel="Environmental & Fire Safety" />
       {/* Top Action & Official Metadata Card (Hidden on Print) */}
       <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -402,52 +418,54 @@ export function EnvironmentalRoundView({
         </div>
 
         {/* GH0030 Header Box Fields */}
-        <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Department / Unit Inspected
-            </label>
-            <input
-              type="text"
-              value={meta.departmentInspected}
-              onChange={(e) => onUpdateRoundMeta({ departmentInspected: e.target.value })}
-              placeholder="e.g., Ward 208 (CCU & Step-Down)"
-              className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Date and Month of Inspection
-            </label>
-            <input
-              type="text"
-              value={meta.inspectionDateMonth}
-              onChange={(e) => onUpdateRoundMeta({ inspectionDateMonth: e.target.value })}
-              placeholder="e.g., November 2026"
-              className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Manager / Dept. Head
-            </label>
-            <input
-              type="text"
-              value={meta.managerHead}
-              onChange={(e) => onUpdateRoundMeta({ managerHead: e.target.value })}
-              placeholder="e.g., Head Nurse / Ward 208 Manager"
-              className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Surveyed By ({activeStaffNames.length} Assigned Staff)
-            </label>
-            <div className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-700 truncate">
-              {activeStaffNames.length > 0 ? activeStaffNames.join(', ') : 'No staff assigned'}
+        <ReadOnlySurface readOnly={!canEdit}>
+          <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Department / Unit Inspected
+              </label>
+              <input
+                type="text"
+                value={meta.departmentInspected}
+                onChange={(e) => onUpdateRoundMeta({ departmentInspected: e.target.value })}
+                placeholder="e.g., Ward 208 (CCU & Step-Down)"
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Date and Month of Inspection
+              </label>
+              <input
+                type="text"
+                value={meta.inspectionDateMonth}
+                onChange={(e) => onUpdateRoundMeta({ inspectionDateMonth: e.target.value })}
+                placeholder="e.g., November 2026"
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Manager / Dept. Head
+              </label>
+              <input
+                type="text"
+                value={meta.managerHead}
+                onChange={(e) => onUpdateRoundMeta({ managerHead: e.target.value })}
+                placeholder="e.g., Head Nurse / Ward 208 Manager"
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Surveyed By ({activeStaffNames.length} Assigned Staff)
+              </label>
+              <div className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-700 truncate">
+                {activeStaffNames.length > 0 ? activeStaffNames.join(', ') : 'No staff assigned'}
+              </div>
             </div>
           </div>
-        </div>
+        </ReadOnlySurface>
       </div>
 
       {/* Print Sheet (Shown in Print Preview AND always active during @media print) */}
@@ -459,6 +477,7 @@ export function EnvironmentalRoundView({
       {viewMode === 'edit' && (
         <div className="no-print space-y-5">
           {/* Assigned Survey Team Card (Multi-Staff Support) */}
+          <ReadOnlySurface readOnly={!canEdit}>
           <section className="bg-white border border-slate-200 rounded-lg p-5">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2">
@@ -473,14 +492,16 @@ export function EnvironmentalRoundView({
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleAddStaff}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md transition-colors cursor-pointer"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Add Assigned Staff
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={handleAddStaff}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md transition-colors cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Add Assigned Staff
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto border border-slate-200 rounded-md">
@@ -554,15 +575,17 @@ export function EnvironmentalRoundView({
                         />
                       </td>
                       <td className="py-1.5 px-2 text-center">
-                        <button
-                          type="button"
-                          disabled={meta.staffAssignments.length <= 1}
-                          onClick={() => handleRemoveStaff(st.id)}
-                          title="Remove staff member"
-                          className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            disabled={meta.staffAssignments.length <= 1}
+                            onClick={() => handleRemoveStaff(st.id)}
+                            title="Remove staff member"
+                            className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -570,6 +593,7 @@ export function EnvironmentalRoundView({
               </table>
             </div>
           </section>
+          </ReadOnlySurface>
 
           {/* Filter & Search Toolbar */}
           <div className="bg-white border border-slate-200 rounded-lg p-3.5 space-y-3">
@@ -610,14 +634,16 @@ export function EnvironmentalRoundView({
                   ))}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Custom Point
-                </button>
+                {canFull && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Custom Point
+                  </button>
+                )}
               </div>
             </div>
 
@@ -652,6 +678,7 @@ export function EnvironmentalRoundView({
           </div>
 
           {/* GH0030 Question Sub-Tables */}
+          <ReadOnlySurface readOnly={!canEdit}>
           <div className="space-y-4">
             {filteredGroups.map(({ grp, questions }) => {
               const allItemsInGroup = grp.questions.map((q) => checkById.get(q.id));
@@ -696,7 +723,7 @@ export function EnvironmentalRoundView({
                       </span>
                       <button
                         type="button"
-                        onClick={() => onSetGroupResponse(grp.id, 'yes')}
+                        onClick={() => canEdit && onSetGroupResponse(grp.id, 'yes')}
                         className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-white hover:bg-emerald-50 text-emerald-800 border border-slate-300 rounded cursor-pointer transition-colors"
                       >
                         <Check className="w-3 h-3" />
@@ -731,27 +758,31 @@ export function EnvironmentalRoundView({
                                   <AlertTriangle className="w-3 h-3" />
                                   Deficiency / Action Needed
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleAddFollowUpRow(
-                                      `${grp.title.replace(/[?:]+$/, '')} — ${q.code}) ${item.title}`
-                                    )
-                                  }
-                                  className="px-2 py-0.5 text-[11px] font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded cursor-pointer"
-                                >
-                                  + Add to Work Order Log
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={ticketRaisedIds[item.id]}
-                                  onClick={() => handleRaiseTicket(item)}
-                                  className="px-2 py-0.5 text-[11px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded cursor-pointer disabled:opacity-60"
-                                >
-                                  {ticketRaisedIds[item.id]
-                                    ? 'Ticket Sent to Maintenance'
-                                    : 'Create Maintenance Ticket'}
-                                </button>
+                                {canEdit && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleAddFollowUpRow(
+                                          `${grp.title.replace(/[?:]+$/, '')} — ${q.code}) ${item.title}`
+                                        )
+                                      }
+                                      className="px-2 py-0.5 text-[11px] font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded cursor-pointer"
+                                    >
+                                      + Add to Work Order Log
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={ticketRaisedIds[item.id]}
+                                      onClick={() => handleRaiseTicket(item)}
+                                      className="px-2 py-0.5 text-[11px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded cursor-pointer disabled:opacity-60"
+                                    >
+                                      {ticketRaisedIds[item.id]
+                                        ? 'Ticket Sent to Maintenance'
+                                        : 'Create Maintenance Ticket'}
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
@@ -887,14 +918,16 @@ export function EnvironmentalRoundView({
                               </button>
                             ))}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteCheck(item.id)}
-                            title="Delete custom question"
-                            className="p-1.5 text-slate-400 hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canFull && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteCheck(item.id)}
+                              title="Delete custom question"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -909,8 +942,10 @@ export function EnvironmentalRoundView({
               </div>
             )}
           </div>
+          </ReadOnlySurface>
 
           {/* Bottom Work Order Follow-Up Action Table (Matches Pages 6–7 of GH0030) */}
+          <ReadOnlySurface readOnly={!canEdit}>
           <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -935,6 +970,7 @@ export function EnvironmentalRoundView({
                 {onOpenMaintenance && (
                   <button
                     type="button"
+                    data-allow-readonly="true"
                     onClick={onOpenMaintenance}
                     className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md cursor-pointer"
                   >
@@ -942,7 +978,7 @@ export function EnvironmentalRoundView({
                     <ArrowUpRight className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {stats.no > 0 && (
+                {canEdit && stats.no > 0 && (
                   <button
                     type="button"
                     onClick={handleSyncNoItemsToFollowUp}
@@ -952,14 +988,16 @@ export function EnvironmentalRoundView({
                     Import &ldquo;No&rdquo; Items ({stats.no})
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleAddFollowUpRow('')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Work Order Row
-                </button>
+                {canFull && (
+                  <button
+                    type="button"
+                    onClick={() => handleAddFollowUpRow('')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Work Order Row
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1060,6 +1098,7 @@ export function EnvironmentalRoundView({
                           {linkedTicket ? (
                             <button
                               type="button"
+                              data-allow-readonly="true"
                               onClick={onOpenMaintenance}
                               className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded border cursor-pointer ${
                                 linkedTicket.status === 'Resolved'
@@ -1076,14 +1115,16 @@ export function EnvironmentalRoundView({
                           )}
                         </td>
                         <td className="py-1.5 px-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteFollowUpRow(row.id)}
-                            title="Delete follow-up row"
-                            className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canFull && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFollowUpRow(row.id)}
+                              title="Delete follow-up row"
+                              className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1111,11 +1152,12 @@ export function EnvironmentalRoundView({
               />
             </div>
           </section>
+          </ReadOnlySurface>
         </div>
       )}
 
       {/* Add Custom Question Modal */}
-      {showAddModal && (
+      {canFull && showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-lg w-full max-w-md shadow-lg">
             <div className="px-5 py-4 border-b border-slate-200">

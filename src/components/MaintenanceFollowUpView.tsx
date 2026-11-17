@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { AddMaintenanceTicketSyncOptions } from '../hooks/useWardStore';
+import type { PermissionLevel } from '../types/auth';
 import type {
   InventoryItem,
   MaintenanceTicket,
@@ -26,12 +27,14 @@ import {
   MaintenanceFollowUpPrintView,
   type MaintenancePrintStatusFilter,
 } from './MaintenanceFollowUpPrintView';
+import { ReadOnlyBanner } from './ReadOnlyBanner';
 
 interface MaintenanceFollowUpViewProps {
   tickets: MaintenanceTicket[];
   wardName?: string;
   defaultInspector: string;
   equipmentItems?: InventoryItem[];
+  permission?: PermissionLevel;
   onAddTicket: (
     ticket: Omit<MaintenanceTicket, 'id'>,
     syncOptions?: boolean | AddMaintenanceTicketSyncOptions
@@ -48,6 +51,7 @@ export function MaintenanceFollowUpView({
   wardName,
   defaultInspector,
   equipmentItems = [],
+  permission = 'full',
   onAddTicket,
   onUpdateStatus,
   onDeleteTicket,
@@ -55,6 +59,8 @@ export function MaintenanceFollowUpView({
   onOpenEquipmentRepairLog,
   onOpenEnvironmentalRound,
 }: MaintenanceFollowUpViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const today = getTodayIso();
   const [statusFilter, setStatusFilter] = useState<MaintenancePrintStatusFilter>('active');
   const [unitFilter, setUnitFilter] = useState<'All' | WardUnit>('All');
@@ -160,6 +166,7 @@ export function MaintenanceFollowUpView({
 
   return (
     <div className="space-y-5">
+      <ReadOnlyBanner permission={permission} sectionLabel="Maintenance Follow-Up" />
       {/* Header */}
       <div className="no-print bg-white border border-slate-200 rounded-lg p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -271,7 +278,7 @@ export function MaintenanceFollowUpView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {onSyncEquipmentLogs && (
+            {canEdit && onSyncEquipmentLogs && (
               <button
                 type="button"
                 onClick={() => {
@@ -307,14 +314,16 @@ export function MaintenanceFollowUpView({
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setShowAddModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Log Maintenance Request
-            </button>
+            {canFull && (
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Log Maintenance Request
+              </button>
+            )}
           </div>
         </div>
 
@@ -426,40 +435,48 @@ export function MaintenanceFollowUpView({
 
                     <td className="py-3 px-4 whitespace-nowrap text-right">
                       <div className="inline-flex items-center gap-1.5">
-                        {tk.status === 'Open' && (
-                          <button
-                            type="button"
-                            onClick={() => onUpdateStatus(tk.id, 'In Progress')}
-                            className="px-2.5 py-1 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded transition-colors cursor-pointer"
-                          >
-                            Start Follow-Up
-                          </button>
-                        )}
-                        {tk.status !== 'Resolved' ? (
-                          <button
-                            type="button"
-                            onClick={() => onUpdateStatus(tk.id, 'Resolved')}
-                            className="px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors cursor-pointer"
-                          >
-                            Mark Resolved
-                          </button>
+                        {canEdit ? (
+                          <>
+                            {tk.status === 'Open' && (
+                              <button
+                                type="button"
+                                onClick={() => onUpdateStatus(tk.id, 'In Progress')}
+                                className="px-2.5 py-1 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded transition-colors cursor-pointer"
+                              >
+                                Start Follow-Up
+                              </button>
+                            )}
+                            {tk.status !== 'Resolved' ? (
+                              <button
+                                type="button"
+                                onClick={() => onUpdateStatus(tk.id, 'Resolved')}
+                                className="px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors cursor-pointer"
+                              >
+                                Mark Resolved
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onUpdateStatus(tk.id, 'Open')}
+                                className="px-2.5 py-1 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                              >
+                                Reopen
+                              </button>
+                            )}
+                          </>
                         ) : (
+                          <span className="text-[11px] text-slate-400">View only</span>
+                        )}
+                        {canFull && (
                           <button
                             type="button"
-                            onClick={() => onUpdateStatus(tk.id, 'Open')}
-                            className="px-2.5 py-1 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                            onClick={() => onDeleteTicket(tk.id)}
+                            title="Delete ticket"
+                            className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
                           >
-                            Reopen
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => onDeleteTicket(tk.id)}
-                          title="Delete ticket"
-                          className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
                     </td>
                   </tr>

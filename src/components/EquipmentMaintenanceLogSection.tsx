@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EQUIPMENT_TABLES } from '../data/equipmentSeed';
+import type { PermissionLevel } from '../types/auth';
 import type {
   EquipmentMaintenanceLogEntry,
   EquipmentMaintenanceLogStatus,
@@ -19,11 +20,13 @@ import type {
   InventoryItem,
 } from '../types/ward';
 import { formatShortDate, getTodayIso } from '../utils/dateUtils';
+import { ReadOnlySurface } from './ReadOnlyBanner';
 
 interface EquipmentMaintenanceLogSectionProps {
   logs: EquipmentMaintenanceLogEntry[];
   equipmentItems: InventoryItem[];
   defaultInspector: string;
+  permission?: PermissionLevel;
   preselectedItemForNewLog?: InventoryItem | null;
   onClearPreselectedItem?: () => void;
   onAddLog: (
@@ -63,6 +66,7 @@ export function EquipmentMaintenanceLogSection({
   logs,
   equipmentItems,
   defaultInspector,
+  permission = 'full',
   preselectedItemForNewLog,
   onClearPreselectedItem,
   onAddLog,
@@ -70,6 +74,8 @@ export function EquipmentMaintenanceLogSection({
   onDeleteLog,
   onPrintReport,
 }: EquipmentMaintenanceLogSectionProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const today = getTodayIso();
 
   const [statusFilter, setStatusFilter] = useState<'active' | 'repaired' | 'all'>('all');
@@ -308,7 +314,7 @@ export function EquipmentMaintenanceLogSection({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {flaggedNotLogged.length > 0 && (
+          {canFull && flaggedNotLogged.length > 0 && (
             <button
               type="button"
               onClick={handleImportFlagged}
@@ -338,14 +344,16 @@ export function EquipmentMaintenanceLogSection({
               </button>
             </>
           )}
-          <button
-            type="button"
-            onClick={openNewModal}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Log Repair / Maintenance
-          </button>
+          {canFull && (
+            <button
+              type="button"
+              onClick={openNewModal}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Log Repair / Maintenance
+            </button>
+          )}
         </div>
       </div>
 
@@ -465,64 +473,70 @@ export function EquipmentMaintenanceLogSection({
                     </td>
 
                     <td className="py-2.5 px-3 space-y-1">
-                      <input
-                        type="text"
-                        value={entry.workOrderNo}
-                        onChange={(e) =>
-                          onUpdateLog(entry.id, { workOrderNo: e.target.value })
-                        }
-                        placeholder="Work Order / Ref #"
-                        className="w-full px-2 py-1 text-xs font-mono border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-teal-700"
-                      />
+                      <ReadOnlySurface readOnly={!canEdit}>
+                        <input
+                          type="text"
+                          value={entry.workOrderNo}
+                          onChange={(e) =>
+                            onUpdateLog(entry.id, { workOrderNo: e.target.value })
+                          }
+                          placeholder="Work Order / Ref #"
+                          className="w-full px-2 py-1 text-xs font-mono border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-teal-700"
+                        />
+                      </ReadOnlySurface>
                       <div className="text-[11px] text-slate-500 truncate">
                         {entry.serviceDepartment}
                       </div>
                     </td>
 
                     <td className="py-2.5 px-3">
-                      <input
-                        type="text"
-                        value={entry.actionTaken}
-                        onChange={(e) =>
-                          onUpdateLog(entry.id, { actionTaken: e.target.value })
-                        }
-                        placeholder="Record repair / loaner / follow-up..."
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-teal-700"
-                      />
+                      <ReadOnlySurface readOnly={!canEdit}>
+                        <input
+                          type="text"
+                          value={entry.actionTaken}
+                          onChange={(e) =>
+                            onUpdateLog(entry.id, { actionTaken: e.target.value })
+                          }
+                          placeholder="Record repair / loaner / follow-up..."
+                          className="w-full px-2 py-1 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-teal-700"
+                        />
+                      </ReadOnlySurface>
                     </td>
 
                     <td className="py-2.5 px-3 whitespace-nowrap">
-                      <select
-                        value={entry.status}
-                        onChange={(e) => {
-                          const nextStatus = e.target.value as EquipmentMaintenanceLogStatus;
-                          const repairedNow = nextStatus === 'Repaired / Returned';
-                          onUpdateLog(
-                            entry.id,
-                            {
-                              status: nextStatus,
-                              resolvedDate: repairedNow ? entry.resolvedDate || today : null,
-                              verifiedBy: repairedNow
-                                ? entry.verifiedBy || defaultInspector
-                                : entry.verifiedBy,
-                            },
-                            repairedNow ? 'Operational' : 'Under Maintenance'
-                          );
-                        }}
-                        className={`px-2 py-1 text-[11px] font-semibold border rounded focus:outline-none focus:ring-1 focus:ring-teal-700 ${
-                          isRepaired
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                            : entry.status === 'Open'
-                              ? 'border-rose-300 bg-rose-50 text-rose-800'
-                              : 'border-amber-300 bg-amber-50 text-amber-800'
-                        }`}
-                      >
-                        {LOG_STATUSES.map((st) => (
-                          <option key={st} value={st}>
-                            {st}
-                          </option>
-                        ))}
-                      </select>
+                      <ReadOnlySurface readOnly={!canEdit}>
+                        <select
+                          value={entry.status}
+                          onChange={(e) => {
+                            const nextStatus = e.target.value as EquipmentMaintenanceLogStatus;
+                            const repairedNow = nextStatus === 'Repaired / Returned';
+                            onUpdateLog(
+                              entry.id,
+                              {
+                                status: nextStatus,
+                                resolvedDate: repairedNow ? entry.resolvedDate || today : null,
+                                verifiedBy: repairedNow
+                                  ? entry.verifiedBy || defaultInspector
+                                  : entry.verifiedBy,
+                              },
+                              repairedNow ? 'Operational' : 'Under Maintenance'
+                            );
+                          }}
+                          className={`px-2 py-1 text-[11px] font-semibold border rounded focus:outline-none focus:ring-1 focus:ring-teal-700 ${
+                            isRepaired
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                              : entry.status === 'Open'
+                                ? 'border-rose-300 bg-rose-50 text-rose-800'
+                                : 'border-amber-300 bg-amber-50 text-amber-800'
+                          }`}
+                        >
+                          {LOG_STATUSES.map((st) => (
+                            <option key={st} value={st}>
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                      </ReadOnlySurface>
                     </td>
 
                     <td className="py-2.5 px-3 whitespace-nowrap">
@@ -544,43 +558,49 @@ export function EquipmentMaintenanceLogSection({
                     </td>
 
                     <td className="py-2.5 px-3 whitespace-nowrap text-right">
-                      <div className="inline-flex items-center gap-1">
-                        {!isRepaired && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateLog(
-                                entry.id,
-                                {
-                                  status: 'Repaired / Returned',
-                                  resolvedDate: today,
-                                  verifiedBy: defaultInspector,
-                                },
-                                'Operational'
-                              )
-                            }
-                            className="px-2 py-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors cursor-pointer"
-                          >
-                            Mark Repaired
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(entry)}
-                          title="Edit repair log"
-                          className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteLog(entry.id)}
-                          title="Delete repair log"
-                          className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <ReadOnlySurface readOnly={!canEdit}>
+                        <div className="inline-flex items-center gap-1">
+                          {canEdit && !isRepaired && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdateLog(
+                                  entry.id,
+                                  {
+                                    status: 'Repaired / Returned',
+                                    resolvedDate: today,
+                                    verifiedBy: defaultInspector,
+                                  },
+                                  'Operational'
+                                )
+                              }
+                              className="px-2 py-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors cursor-pointer"
+                            >
+                              Mark Repaired
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(entry)}
+                              title="Edit repair log"
+                              className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canFull && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteLog(entry.id)}
+                              title="Delete repair log"
+                              className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </ReadOnlySurface>
                     </td>
                   </tr>
                 );

@@ -1,0 +1,162 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted marker document granting full administrative authority to an admin UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "displayName", "createdAt"]
+    },
+    "WardUserAccess": {
+      "title": "WardUserAccess",
+      "description": "Admin-managed user profile and selective task/inventory permission matrix.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160,
+          "description": "Hospital login email ending with @hospitals.gov.bh (or runtime owner bootstrap email).",
+          "pattern": "^([^\\s@]+@hospitals\\.gov\\.bh|ghsmc208@gmail\\.com)$"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "staff"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "suspended"]
+        },
+        "taskPermissions": {
+          "type": "object",
+          "description": "Map of task module ID to permission level ('none' | 'view' | 'edit' | 'full')."
+        },
+        "taskScopeMode": {
+          "type": "string",
+          "enum": ["all", "selected"]
+        },
+        "allowedTaskIds": {
+          "type": "array",
+          "description": "Selective list of scheduled task IDs allowed when taskScopeMode is 'selected'."
+        },
+        "inventoryPermissions": {
+          "type": "object",
+          "description": "Map of inventory category ID to permission level ('none' | 'view' | 'edit' | 'full')."
+        },
+        "canExportBackup": {
+          "type": "boolean"
+        },
+        "canAddCustomInventory": {
+          "type": "boolean"
+        },
+        "uid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "displayName",
+        "role",
+        "status",
+        "taskPermissions",
+        "taskScopeMode",
+        "allowedTaskIds",
+        "inventoryPermissions",
+        "canExportBackup",
+        "canAddCustomInventory",
+        "uid",
+        "createdByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WardModuleDoc": {
+      "title": "WardModuleDoc",
+      "description": "Modular slice of ward schedule, round, or inventory data keyed by moduleId.",
+      "type": "object",
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "payload": {
+          "type": "object",
+          "description": "Serialized domain state for the module."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedByUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "updatedByEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160
+        }
+      },
+      "required": ["moduleId", "payload", "updatedAt", "updatedByUid", "updatedByEmail"]
+    }
+  },
+  "firestore": {
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Admin UID marker documents."
+    },
+    "/wardUsers/{accessId}": {
+      "schema": { "$ref": "#/entities/WardUserAccess" },
+      "description": "Admin-managed user accounts with selective task and inventory permissions."
+    },
+    "/wardModules/{moduleId}": {
+      "schema": { "$ref": "#/entities/WardModuleDoc" },
+      "description": "Modular WardCare Schedule operational and inventory documents."
+    }
+  }
+}

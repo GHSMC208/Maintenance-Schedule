@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { PermissionLevel } from '../types/auth';
 import type {
   CategoryMeta,
   EquipmentMaintenanceLogEntry,
@@ -54,6 +55,7 @@ import {
 } from './EquipmentPrintView';
 import { PrepRoomPrintView, type PrepRoomPrintScope } from './PrepRoomPrintView';
 import { ProcedureTrolleyPrintView } from './ProcedureTrolleyPrintView';
+import { ReadOnlyBanner, ReadOnlySurface } from './ReadOnlyBanner';
 import {
   StoreChecklistPrintView,
   type StorePrintLayoutMode,
@@ -85,6 +87,7 @@ interface InventoryModuleViewProps {
   ) => void;
   onDeleteEquipmentMaintenanceLog?: (entryId: string) => void;
   initialEquipmentTab?: 'inventory' | 'maintenance';
+  permission?: PermissionLevel;
 }
 
 export function InventoryModuleView({
@@ -105,7 +108,10 @@ export function InventoryModuleView({
   onUpdateEquipmentMaintenanceLog,
   onDeleteEquipmentMaintenanceLog,
   initialEquipmentTab = 'inventory',
+  permission = 'full',
 }: InventoryModuleViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const today = getTodayIso();
   const isTransferBag = category.id === 'transfer-bag';
   const isStore = category.id === 'store';
@@ -458,7 +464,7 @@ export function InventoryModuleView({
   ]);
 
   const syncSectionStaffList = (nextList: StoreStaffAssignment[]) => {
-    if (!onUpdateSectionMeta) return;
+    if (!canEdit || !onUpdateSectionMeta) return;
     const first = nextList[0];
     onUpdateSectionMeta({
       staffAssignments: nextList,
@@ -473,6 +479,7 @@ export function InventoryModuleView({
     field: keyof StoreStaffAssignment,
     val: string
   ) => {
+    if (!canEdit) return;
     const next = sectionStaffAssignments.map((st, i) =>
       i === idx ? { ...st, [field]: val } : st
     );
@@ -480,6 +487,7 @@ export function InventoryModuleView({
   };
 
   const addSectionStaffRow = () => {
+    if (!canEdit) return;
     const [y, m, d] = today.split('-');
     const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
     const next: StoreStaffAssignment[] = [
@@ -507,11 +515,13 @@ export function InventoryModuleView({
   };
 
   const removeSectionStaffRow = (idx: number) => {
+    if (!canEdit) return;
     if (sectionStaffAssignments.length <= 1) return;
     syncSectionStaffList(sectionStaffAssignments.filter((_, i) => i !== idx));
   };
 
   const openAdd = (presetSectionOrTable?: string) => {
+    if (!canFull) return;
     const defaultPrepUnit: 'CCU' | 'SD' = unitFilter === 'SD' ? 'SD' : 'CCU';
     const defaultEqUnit: 'CCU' | 'SD' | 'General Ward' =
       unitFilter === 'SD' ? 'SD' : unitFilter === 'General Ward' ? 'General Ward' : 'CCU';
@@ -583,6 +593,7 @@ export function InventoryModuleView({
   };
 
   const openEdit = (item: InventoryItem) => {
+    if (!canEdit) return;
     const displayExp =
       item.expiryDisplay !== undefined
         ? item.expiryDisplay
@@ -610,6 +621,7 @@ export function InventoryModuleView({
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingItem ? !canEdit : !canFull) return;
     if (!formName.trim()) return;
 
     const computedExpiryDate =
@@ -681,6 +693,7 @@ export function InventoryModuleView({
 
   return (
     <div className="space-y-5">
+      <ReadOnlyBanner permission={permission} sectionLabel={category.label} />
       {/* Section Header & Summary Strip */}
       <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -757,6 +770,7 @@ export function InventoryModuleView({
         {!isTransferBag && !isStore && onUpdateSectionMeta && (
           <div className="pt-4 border-t border-slate-200 space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-3">
+              <ReadOnlySurface readOnly={!canEdit}>
               <div className="grid grid-cols-1 sm:grid-cols-3 max-w-2xl gap-3 flex-1">
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -791,6 +805,7 @@ export function InventoryModuleView({
                   />
                 </div>
               </div>
+              </ReadOnlySurface>
 
               {(isProcedureTrolley || isPrepRoom || isBloodTrolley || isEquipmentModule) && (
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -983,24 +998,27 @@ export function InventoryModuleView({
             </div>
 
             {isPrepRoom && (
-              <div className="max-w-3xl">
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  CCU Checklist Comments (printed at bottom of CCU form)
-                </label>
-                <input
-                  type="text"
-                  value={sectionMeta?.comments ?? ''}
-                  onChange={(e) => onUpdateSectionMeta({ comments: e.target.value })}
-                  placeholder="Expired items were sent to CSSD Department."
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                />
-              </div>
+              <ReadOnlySurface readOnly={!canEdit}>
+                <div className="max-w-3xl">
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                    CCU Checklist Comments (printed at bottom of CCU form)
+                  </label>
+                  <input
+                    type="text"
+                    value={sectionMeta?.comments ?? ''}
+                    onChange={(e) => onUpdateSectionMeta({ comments: e.target.value })}
+                    placeholder="Expired items were sent to CSSD Department."
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                </div>
+              </ReadOnlySurface>
             )}
           </div>
         )}
 
         {isStore && onUpdateSectionMeta && (
           <div className="pt-4 border-t border-slate-200 flex flex-wrap items-end justify-between gap-3">
+            <ReadOnlySurface readOnly={!canEdit}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 flex-1 max-w-2xl">
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -1035,6 +1053,7 @@ export function InventoryModuleView({
                 />
               </div>
             </div>
+            </ReadOnlySurface>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <div
@@ -1134,6 +1153,7 @@ export function InventoryModuleView({
 
         {isTransferBag && (
           <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <ReadOnlySurface readOnly={!canEdit}>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 flex-1 min-w-[320px]">
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -1190,6 +1210,7 @@ export function InventoryModuleView({
                 />
               </div>
             </div>
+            </ReadOnlySurface>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
@@ -1235,6 +1256,7 @@ export function InventoryModuleView({
       {/* Assigned Staff Card for Store, Procedure Trolley, Prep Room, Blood Trolley & Medical Equipment */}
       {(isStore || isProcedureTrolley || isPrepRoom || isBloodTrolley || isEquipmentModule) &&
         viewMode === 'editor' && (
+          <ReadOnlySurface readOnly={!canEdit}>
           <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -1271,14 +1293,16 @@ export function InventoryModuleView({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={addSectionStaffRow}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Staff Member
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={addSectionStaffRow}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Staff Member
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto border border-slate-200 rounded-md">
@@ -1378,19 +1402,21 @@ export function InventoryModuleView({
                       />
                     </td>
                     <td className="p-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => removeSectionStaffRow(idx)}
-                        disabled={sectionStaffAssignments.length <= 1}
-                        title={
-                          sectionStaffAssignments.length <= 1
-                            ? 'At least 1 assigned staff required'
-                            : 'Remove staff member'
-                        }
-                        className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => removeSectionStaffRow(idx)}
+                          disabled={sectionStaffAssignments.length <= 1}
+                          title={
+                            sectionStaffAssignments.length <= 1
+                              ? 'At least 1 assigned staff required'
+                              : 'Remove staff member'
+                          }
+                          className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none rounded cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1398,6 +1424,7 @@ export function InventoryModuleView({
             </table>
           </div>
         </div>
+        </ReadOnlySurface>
       )}
 
       {/* Filter & Inventory Grid */}
@@ -1509,14 +1536,16 @@ export function InventoryModuleView({
                   />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => openAdd()}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Item
-                </button>
+                {canFull && (
+                  <button
+                    type="button"
+                    onClick={() => openAdd()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Item
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1530,13 +1559,15 @@ export function InventoryModuleView({
               <p className="mt-1 text-xs text-slate-500">
                 Add an item to this category or clear your search/status filters.
               </p>
-              <button
-                type="button"
-                onClick={() => openAdd()}
-                className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
-              >
-                Add Entry
-              </button>
+              {canFull && (
+                <button
+                  type="button"
+                  onClick={() => openAdd()}
+                  className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
+                >
+                  Add Entry
+                </button>
+              )}
             </div>
           ) : (
             groupedStoreSections.map((section) => {
@@ -1569,17 +1600,20 @@ export function InventoryModuleView({
                       </span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => openAdd(section.name)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-100 bg-teal-800/80 hover:bg-teal-700 rounded transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add to {section.name}
-                    </button>
+                    {canFull && (
+                      <button
+                        type="button"
+                        onClick={() => openAdd(section.name)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-100 bg-teal-800/80 hover:bg-teal-700 rounded transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add to {section.name}
+                      </button>
+                    )}
                   </div>
 
                   {!isCollapsed && (
+                    <ReadOnlySurface readOnly={!canEdit}>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
@@ -1628,18 +1662,20 @@ export function InventoryModuleView({
 
                                 <td className="py-2.5 px-3 whitespace-nowrap">
                                   <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      aria-label="Decrease quantity"
-                                      onClick={() =>
-                                        onUpdateItem(item.id, {
-                                          quantity: Math.max(0, item.quantity - 1),
-                                        })
-                                      }
-                                      className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
-                                    >
-                                      <Minus className="w-3 h-3" />
-                                    </button>
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        aria-label="Decrease quantity"
+                                        onClick={() =>
+                                          onUpdateItem(item.id, {
+                                            quantity: Math.max(0, item.quantity - 1),
+                                          })
+                                        }
+                                        className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </button>
+                                    )}
                                     <span
                                       className={`font-mono tabular-nums text-xs font-semibold min-w-[68px] text-center ${
                                         isLowStock ? 'text-amber-700' : 'text-slate-900'
@@ -1647,16 +1683,18 @@ export function InventoryModuleView({
                                     >
                                       {item.quantity} / {item.parLevel} {item.unitOfMeasure}
                                     </span>
-                                    <button
-                                      type="button"
-                                      aria-label="Increase quantity"
-                                      onClick={() =>
-                                        onUpdateItem(item.id, { quantity: item.quantity + 1 })
-                                      }
-                                      className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
-                                    >
-                                      <Plus className="w-3 h-3" />
-                                    </button>
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        aria-label="Increase quantity"
+                                        onClick={() =>
+                                          onUpdateItem(item.id, { quantity: item.quantity + 1 })
+                                        }
+                                        className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
 
@@ -1723,29 +1761,35 @@ export function InventoryModuleView({
 
                                 <td className="py-2.5 px-4 whitespace-nowrap text-right">
                                   <div className="inline-flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => onVerifyItem(item.id, defaultInspector)}
-                                      className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                                    >
-                                      Verify
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEdit(item)}
-                                      title="Edit item"
-                                      className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => onDeleteItem(item.id)}
-                                      title="Delete item"
-                                      className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    {canEdit && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => onVerifyItem(item.id, defaultInspector)}
+                                          className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                                        >
+                                          Verify
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => openEdit(item)}
+                                          title="Edit item"
+                                          className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                                        >
+                                          <Edit3 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    )}
+                                    {canFull && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onDeleteItem(item.id)}
+                                        title="Delete item"
+                                        className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -1754,6 +1798,7 @@ export function InventoryModuleView({
                         </tbody>
                       </table>
                     </div>
+                    </ReadOnlySurface>
                   )}
                 </div>
               );
@@ -1808,6 +1853,7 @@ export function InventoryModuleView({
                 logs={equipmentMaintenanceLogs}
                 equipmentItems={categoryItems}
                 defaultInspector={defaultInspector}
+                permission={permission}
                 preselectedItemForNewLog={preselectedItemForRepair}
                 onClearPreselectedItem={() => setPreselectedItemForRepair(null)}
                 onAddLog={onAddEquipmentMaintenanceLog}
@@ -1935,14 +1981,16 @@ export function InventoryModuleView({
                   />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => openAdd()}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Equipment
-                </button>
+                {canFull && (
+                  <button
+                    type="button"
+                    onClick={() => openAdd()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Equipment
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1956,13 +2004,15 @@ export function InventoryModuleView({
               <p className="mt-1 text-xs text-slate-500">
                 Add equipment to this table or clear your unit, table, or search filters.
               </p>
-              <button
-                type="button"
-                onClick={() => openAdd()}
-                className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
-              >
-                Add Equipment
-              </button>
+              {canFull && (
+                <button
+                  type="button"
+                  onClick={() => openAdd()}
+                  className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
+                >
+                  Add Equipment
+                </button>
+              )}
             </div>
           ) : (
             groupedEquipmentTables.map((tableGroup) => {
@@ -1995,17 +2045,20 @@ export function InventoryModuleView({
                       </span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => openAdd(tableGroup.name)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-100 bg-teal-800/80 hover:bg-teal-700 rounded transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add to Table
-                    </button>
+                    {canFull && (
+                      <button
+                        type="button"
+                        onClick={() => openAdd(tableGroup.name)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-100 bg-teal-800/80 hover:bg-teal-700 rounded transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add to Table
+                      </button>
+                    )}
                   </div>
 
                   {!isCollapsed && (
+                    <ReadOnlySurface readOnly={!canEdit}>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
@@ -2196,7 +2249,7 @@ export function InventoryModuleView({
 
                                 <td className="py-2 px-4 whitespace-nowrap text-right">
                                   <div className="inline-flex items-center gap-1.5">
-                                    {!isStoreRow && !isTotalRow && onAddEquipmentMaintenanceLog && (
+                                    {canEdit && !isStoreRow && !isTotalRow && onAddEquipmentMaintenanceLog && (
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -2211,29 +2264,35 @@ export function InventoryModuleView({
                                         Repair
                                       </button>
                                     )}
-                                    <button
-                                      type="button"
-                                      onClick={() => onVerifyItem(item.id, defaultInspector)}
-                                      className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                                    >
-                                      Verify
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEdit(item)}
-                                      title="Edit equipment"
-                                      className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => onDeleteItem(item.id)}
-                                      title="Delete equipment"
-                                      className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    {canEdit && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => onVerifyItem(item.id, defaultInspector)}
+                                          className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                                        >
+                                          Verify
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => openEdit(item)}
+                                          title="Edit equipment"
+                                          className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                                        >
+                                          <Edit3 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    )}
+                                    {canFull && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onDeleteItem(item.id)}
+                                        title="Delete equipment"
+                                        className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -2242,6 +2301,7 @@ export function InventoryModuleView({
                         </tbody>
                       </table>
                     </div>
+                    </ReadOnlySurface>
                   )}
                 </div>
               );
@@ -2351,14 +2411,16 @@ export function InventoryModuleView({
                 />
               </div>
 
-              <button
-                type="button"
-                onClick={() => openAdd()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add {category.isEquipment ? 'Equipment' : 'Item'}
-              </button>
+              {canFull && (
+                <button
+                  type="button"
+                  onClick={() => openAdd()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add {category.isEquipment ? 'Equipment' : 'Item'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -2368,15 +2430,18 @@ export function InventoryModuleView({
               <p className="mt-1 text-xs text-slate-500">
                 Add an item to this section or clear your unit/status filters.
               </p>
-              <button
-                type="button"
-                onClick={() => openAdd()}
-                className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
-              >
-                Add First Entry
-              </button>
+              {canFull && (
+                <button
+                  type="button"
+                  onClick={() => openAdd()}
+                  className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
+                >
+                  Add First Entry
+                </button>
+              )}
             </div>
           ) : (
+            <ReadOnlySurface readOnly={!canEdit}>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2456,16 +2521,18 @@ export function InventoryModuleView({
                           </span>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              aria-label="Decrease quantity"
-                              onClick={() =>
-                                onUpdateItem(item.id, { quantity: Math.max(0, item.quantity - 1) })
-                              }
-                              className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
-                            >
-                              <Minus className="w-3 h-3" />
-                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                aria-label="Decrease quantity"
+                                onClick={() =>
+                                  onUpdateItem(item.id, { quantity: Math.max(0, item.quantity - 1) })
+                                }
+                                className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                            )}
                             <span
                               className={`font-mono tabular-nums text-xs font-semibold min-w-[68px] text-center ${
                                 isLowStock ? 'text-amber-700' : 'text-slate-900'
@@ -2473,14 +2540,16 @@ export function InventoryModuleView({
                             >
                               {item.quantity} / {item.parLevel} {item.unitOfMeasure}
                             </span>
-                            <button
-                              type="button"
-                              aria-label="Increase quantity"
-                              onClick={() => onUpdateItem(item.id, { quantity: item.quantity + 1 })}
-                              className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                aria-label="Increase quantity"
+                                onClick={() => onUpdateItem(item.id, { quantity: item.quantity + 1 })}
+                                className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 rounded hover:bg-slate-100 cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -2581,29 +2650,35 @@ export function InventoryModuleView({
 
                       <td className="py-3 px-4 whitespace-nowrap text-right">
                         <div className="inline-flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onVerifyItem(item.id, defaultInspector)}
-                            className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                          >
-                            Verify
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEdit(item)}
-                            title="Edit item"
-                            className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteItem(item.id)}
-                            title="Delete item"
-                            className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canEdit && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onVerifyItem(item.id, defaultInspector)}
+                                className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                              >
+                                Verify
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEdit(item)}
+                                title="Edit item"
+                                className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                          {canFull && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteItem(item.id)}
+                              title="Delete item"
+                              className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2612,6 +2687,7 @@ export function InventoryModuleView({
                 </tbody>
               </table>
             </div>
+            </ReadOnlySurface>
           )}
         </div>
       )}
@@ -2941,7 +3017,7 @@ export function InventoryModuleView({
       )}
 
       {/* Add / Edit Item Modal */}
-      {showAddModal && (
+      {(canEdit || canFull) && showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-lg w-full max-w-lg shadow-lg">
             <div className="px-5 py-4 border-b border-slate-200">

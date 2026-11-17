@@ -9,8 +9,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { PermissionLevel } from '../types/auth';
 import type { ScheduleTask, TaskFrequency, WardUnit } from '../types/ward';
 import { formatShortDate, getTaskDueState, getTodayIso } from '../utils/dateUtils';
+import { ReadOnlyBanner } from './ReadOnlyBanner';
 import type { NavSectionId } from './Sidebar';
 
 interface OverviewScheduleViewProps {
@@ -20,6 +22,10 @@ interface OverviewScheduleViewProps {
   expiredCount: number;
   openTicketsCount: number;
   criticalOxygenCount: number;
+  permission?: PermissionLevel;
+  canNavigateBloodTrolley?: boolean;
+  canNavigateOxygen?: boolean;
+  canNavigateMaintenance?: boolean;
   onCompleteTask: (
     taskId: string,
     inspector: string,
@@ -39,12 +45,18 @@ export function OverviewScheduleView({
   expiredCount,
   openTicketsCount,
   criticalOxygenCount,
+  permission = 'full',
+  canNavigateBloodTrolley = true,
+  canNavigateOxygen = true,
+  canNavigateMaintenance = true,
   onCompleteTask,
   onReopenTask,
   onAddTask,
   onDeleteTask,
   onNavigate,
 }: OverviewScheduleViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const today = getTodayIso();
   const [freqFilter, setFreqFilter] = useState<'all' | 'weekly' | 'monthly' | 'attention'>('all');
   const [unitFilter, setUnitFilter] = useState<'All' | WardUnit>('All');
@@ -129,6 +141,7 @@ export function OverviewScheduleView({
 
   return (
     <div className="space-y-6">
+      <ReadOnlyBanner permission={permission} sectionLabel="Weekly & Monthly Tasks" />
       {/* Top 4-Metric Ward Readiness Strip */}
       <section
         aria-label="Ward Maintenance Summary"
@@ -159,8 +172,9 @@ export function OverviewScheduleView({
 
         <button
           type="button"
-          onClick={() => onNavigate('inv:blood-trolley')}
-          className="p-5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+          disabled={!canNavigateBloodTrolley}
+          onClick={() => canNavigateBloodTrolley && onNavigate('inv:blood-trolley')}
+          className="p-5 text-left hover:bg-slate-50 disabled:hover:bg-white disabled:cursor-default transition-colors cursor-pointer"
         >
           <div className="text-xs font-medium text-slate-500">Expired / Expiring &le; 30d</div>
           <div className="mt-1.5 flex items-baseline justify-between">
@@ -182,8 +196,9 @@ export function OverviewScheduleView({
 
         <button
           type="button"
-          onClick={() => onNavigate('oxygen')}
-          className="p-5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+          disabled={!canNavigateOxygen}
+          onClick={() => canNavigateOxygen && onNavigate('oxygen')}
+          className="p-5 text-left hover:bg-slate-50 disabled:hover:bg-white disabled:cursor-default transition-colors cursor-pointer"
         >
           <div className="text-xs font-medium text-slate-500">Oxygen Cylinder Alerts</div>
           <div className="mt-1.5 flex items-baseline justify-between">
@@ -205,8 +220,9 @@ export function OverviewScheduleView({
 
         <button
           type="button"
-          onClick={() => onNavigate('maintenance')}
-          className="p-5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+          disabled={!canNavigateMaintenance}
+          onClick={() => canNavigateMaintenance && onNavigate('maintenance')}
+          className="p-5 text-left hover:bg-slate-50 disabled:hover:bg-white disabled:cursor-default transition-colors cursor-pointer"
         >
           <div className="text-xs font-medium text-slate-500">Open Maintenance Tickets</div>
           <div className="mt-1.5 flex items-baseline justify-between">
@@ -282,14 +298,16 @@ export function OverviewScheduleView({
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowAddModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Schedule Task
-            </button>
+            {canFull && (
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Schedule Task
+              </button>
+            )}
           </div>
         </div>
 
@@ -404,31 +422,39 @@ export function OverviewScheduleView({
 
                       <td className="py-3 px-4 whitespace-nowrap text-right">
                         <div className="inline-flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openCompleteModal(task)}
-                            className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
-                          >
-                            Log Check
-                          </button>
-                          {task.status === 'completed' && (
+                          {canEdit ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openCompleteModal(task)}
+                                className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                              >
+                                Log Check
+                              </button>
+                              {task.status === 'completed' && (
+                                <button
+                                  type="button"
+                                  onClick={() => onReopenTask(task.id)}
+                                  title="Reopen as pending"
+                                  className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">View only</span>
+                          )}
+                          {canFull && (
                             <button
                               type="button"
-                              onClick={() => onReopenTask(task.id)}
-                              title="Reopen as pending"
-                              className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer"
+                              onClick={() => onDeleteTask(task.id)}
+                              title="Delete task"
+                              className="p-1 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
                             >
-                              <RotateCcw className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => onDeleteTask(task.id)}
-                            title="Delete task"
-                            className="p-1 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
                         </div>
                       </td>
                     </tr>

@@ -35,6 +35,7 @@ import type {
 } from '../types/ward';
 import { getCrashCartSlotExpirySeverity, getExpiryStatus, getTodayIso } from '../utils/dateUtils';
 import { AUTO_NEAR_PREFIX, collectNearExpiryCandidates } from '../utils/nearExpirySync';
+import type { PermissionLevel } from '../types/auth';
 import {
   CAD_ROWS_PER_PAGE,
   CadPrintPage,
@@ -45,6 +46,7 @@ import {
   WEEKLY_ROWS_PER_PAGE,
   WeeklyStockPrintPage,
 } from './PharmacyFormsPrintView';
+import { ReadOnlyBanner, ReadOnlySurface } from './ReadOnlyBanner';
 
 type ActivePharmacyFormId = 'cad' | WeeklyStockFormId | 'monthly-store' | 'request-form';
 
@@ -54,6 +56,7 @@ interface PharmacyFormsViewProps {
   inventory: InventoryItem[];
   wardName: string;
   defaultInspector: string;
+  permission?: PermissionLevel;
   onUpdateCad: (patch: Partial<CadChecklistForm>) => void;
   onUpdateWeeklyForm: (
     formId: WeeklyStockFormId,
@@ -90,6 +93,7 @@ export function PharmacyFormsView({
   inventory,
   wardName,
   defaultInspector,
+  permission = 'full',
   onUpdateCad,
   onUpdateWeeklyForm,
   onUpdateMonthlyStore,
@@ -99,6 +103,8 @@ export function PharmacyFormsView({
   onToggleAutoSyncNearExpiry,
   onResyncNearExpiry,
 }: PharmacyFormsViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const [activeForm, setActiveForm] = useState<ActivePharmacyFormId>('cad');
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
 
@@ -434,6 +440,7 @@ export function PharmacyFormsView({
 
   return (
     <div className="space-y-5">
+      <ReadOnlyBanner permission={permission} sectionLabel="Pharmacy & Store Forms" />
       {/* Dynamic @page orientation override so Landscape forms print Landscape and Portrait forms print Portrait */}
       <style>{`@media print { @page { size: ${isLandscape ? 'A4 landscape' : 'A4 portrait'}; margin: 6mm 7mm; } }`}</style>
 
@@ -469,7 +476,7 @@ export function PharmacyFormsView({
                 }`}
               >
                 <FileEdit className="w-3.5 h-3.5" />
-                Edit Form
+                {canEdit ? 'Edit Form' : 'View Form'}
               </button>
               <button
                 type="button"
@@ -485,7 +492,7 @@ export function PharmacyFormsView({
               </button>
             </div>
 
-            {viewMode === 'editor' && (
+            {viewMode === 'editor' && canFull && (
               <button
                 type="button"
                 onClick={() => handleAddRowsToActiveForm(1)}
@@ -496,24 +503,28 @@ export function PharmacyFormsView({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={handleAutoPopulateFromInventory}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Fill From Ward Stock
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={handleAutoPopulateFromInventory}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Fill From Ward Stock
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleClearCurrentForm}
-              title="Reset form to blank template"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Clear
-            </button>
+            {canFull && (
+              <button
+                type="button"
+                onClick={handleClearCurrentForm}
+                title="Reset form to blank template"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Clear
+              </button>
+            )}
 
             <button
               type="button"
@@ -573,48 +584,50 @@ export function PharmacyFormsView({
 
       {/* ==================== INTERACTIVE EDITOR ==================== */}
       {viewMode === 'editor' && (
-        <div className="no-print">
-          {activeForm === 'cad' && (
-            <CadEditor
-              form={forms.cad}
-              onChange={onUpdateCad}
-              onAddRows={handleAddRowsToActiveForm}
-              today={today}
-            />
-          )}
-
-          {activeForm === 'monthly-store' && (
-            <MonthlyStoreEditor
-              form={forms.monthlyStore}
-              onChange={onUpdateMonthlyStore}
-              onAddRows={handleAddRowsToActiveForm}
-              today={today}
-            />
-          )}
-
-          {activeForm === 'request-form' && (
-            <PharmacyRequestEditor
-              form={forms.requestForm}
-              customCatalogItems={forms.customRequestCatalogItems || []}
-              onChange={onUpdateRequestForm}
-              onAddRows={handleAddRowsToActiveForm}
-              onAddCatalogItem={onAddRequestCatalogItem}
-              onDeleteCatalogItem={onDeleteRequestCatalogItem}
-              today={today}
-            />
-          )}
-
-          {activeForm !== 'cad' &&
-            activeForm !== 'monthly-store' &&
-            activeForm !== 'request-form' && (
-              <WeeklyStockEditor
-                form={forms.weeklyForms[activeForm]}
-                onChange={(patch) => onUpdateWeeklyForm(activeForm, patch)}
-                onAddRows={handleAddRowsToActiveForm}
+        <ReadOnlySurface readOnly={!canEdit}>
+          <div className="no-print">
+            {activeForm === 'cad' && (
+              <CadEditor
+                form={forms.cad}
+                onChange={onUpdateCad}
+                onAddRows={canFull ? handleAddRowsToActiveForm : () => {}}
                 today={today}
               />
             )}
-        </div>
+
+            {activeForm === 'monthly-store' && (
+              <MonthlyStoreEditor
+                form={forms.monthlyStore}
+                onChange={onUpdateMonthlyStore}
+                onAddRows={canFull ? handleAddRowsToActiveForm : () => {}}
+                today={today}
+              />
+            )}
+
+            {activeForm === 'request-form' && (
+              <PharmacyRequestEditor
+                form={forms.requestForm}
+                customCatalogItems={forms.customRequestCatalogItems || []}
+                onChange={onUpdateRequestForm}
+                onAddRows={canFull ? handleAddRowsToActiveForm : () => {}}
+                onAddCatalogItem={onAddRequestCatalogItem}
+                onDeleteCatalogItem={onDeleteRequestCatalogItem}
+                today={today}
+              />
+            )}
+
+            {activeForm !== 'cad' &&
+              activeForm !== 'monthly-store' &&
+              activeForm !== 'request-form' && (
+                <WeeklyStockEditor
+                  form={forms.weeklyForms[activeForm]}
+                  onChange={(patch) => onUpdateWeeklyForm(activeForm, patch)}
+                  onAddRows={canFull ? handleAddRowsToActiveForm : () => {}}
+                  today={today}
+                />
+              )}
+          </div>
+        </ReadOnlySurface>
       )}
 
       {/* ==================== OFFICIAL PRINT VIEW ==================== */}

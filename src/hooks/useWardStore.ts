@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
+import { OperationType, auth, db, handleFirestoreError, stripUndefinedDeep } from '../firebase';
+import { TASK_MODULE_DEFINITIONS, type TaskModuleKey, normalizeEmail } from '../types/auth';
 import {
   createInitialBloodTrolleyItems,
   createInitialBloodTrolleySdItems,
@@ -9,6 +13,7 @@ import {
   createInitialEquipmentMaintenanceLogs,
 } from '../data/equipmentSeed';
 import {
+  CORE_CATEGORIES,
   createDefaultSectionPeriodMeta,
   createInitialBloodTrolleyStaff,
   createInitialEquipmentStaff,
@@ -96,6 +101,196 @@ export interface AddMaintenanceTicketSyncOptions {
 }
 
 const STORAGE_KEY = 'wardcare_schedule_store_v1';
+const TASK_MODULE_KEYS: TaskModuleKey[] = TASK_MODULE_DEFINITIONS.map((m) => m.id);
+
+function buildModulePayloads(store: WardStoreData): Record<string, Record<string, unknown>> {
+  const catIds = new Set<string>([
+    ...CORE_CATEGORIES.map((c) => c.id),
+    ...(store.customCategories || []).map((c) => c.id),
+    ...store.inventory.map((it) => it.categoryId),
+  ]);
+
+  const payloads: Record<string, Record<string, unknown>> = {
+    core: {
+      wardName: store.wardName,
+      defaultInspector: store.defaultInspector,
+      customCategories: store.customCategories || [],
+      lastBackupDate: store.lastBackupDate ?? null,
+    },
+    schedule: {
+      tasks: store.tasks,
+    },
+    'crash-cart': {
+      crashCarts: store.crashCarts,
+    },
+    'pharmacy-forms': {
+      pharmacyForms: store.pharmacyForms,
+    },
+    environmental: {
+      environmentalChecks: store.environmentalChecks,
+      environmentalRoundMeta: store.environmentalRoundMeta ?? null,
+      environmentalSectionMeta: store.sectionMeta?.environmental ?? null,
+    },
+    oxygen: {
+      oxygenCylinders: store.oxygenCylinders,
+      oxygenLogs: store.oxygenLogs,
+      cylinderSchedule: store.cylinderSchedule ?? null,
+    },
+    maintenance: {
+      maintenanceTickets: store.maintenanceTickets,
+    },
+  };
+
+  for (const catId of catIds) {
+    if (!catId || catId.length > 58) continue;
+    const invPayload: Record<string, unknown> = {
+      items: store.inventory.filter((it) => it.categoryId === catId),
+      sectionMeta: store.sectionMeta?.[catId] ?? null,
+    };
+    if (catId === 'transfer-bag') {
+      invPayload.transferBagMeta = store.transferBagMeta ?? null;
+    }
+    if (catId === 'iv-meds') {
+      invPayload.ivMedsAuditMeta = store.ivMedsAuditMeta ?? null;
+    }
+    if (catId === 'equipment') {
+      invPayload.equipmentMaintenanceLogs = store.equipmentMaintenanceLogs ?? [];
+    }
+    payloads[`inv_${catId}`] = invPayload;
+  }
+
+  return payloads;
+}
+
+function applyModulePayloadToStore(
+  prev: WardStoreData,
+  moduleId: string,
+  payload: Record<string, unknown>,
+  today: string
+): WardStoreData {
+  if (!payload || typeof payload !== 'object') return prev;
+
+  if (moduleId === 'core') {
+    return {
+      ...prev,
+      wardName: typeof payload.wardName === 'string' ? payload.wardName : prev.wardName,
+      defaultInspector:
+        typeof payload.defaultInspector === 'string'
+          ? payload.defaultInspector
+          : prev.defaultInspector,
+      customCategories: Array.isArray(payload.customCategories)
+        ? (payload.customCategories as CategoryMeta[])
+        : prev.customCategories,
+      lastBackupDate:
+        payload.lastBackupDate === null || typeof payload.lastBackupDate === 'string'
+          ? (payload.lastBackupDate as string | null)
+          : prev.lastBackupDate,
+    };
+  }
+
+  if (moduleId === 'schedule') {
+    return {
+      ...prev,
+      tasks: Array.isArray(payload.tasks) ? (payload.tasks as ScheduleTask[]) : prev.tasks,
+    };
+  }
+
+  if (moduleId === 'crash-cart') {
+    return {
+      ...prev,
+      crashCarts: Array.isArray(payload.crashCarts)
+        ? (payload.crashCarts as CrashCartChecklist[])
+        : prev.crashCarts,
+    };
+  }
+
+  if (moduleId === 'pharmacy-forms') {
+    if (!payload.pharmacyForms || typeof payload.pharmacyForms !== 'object') return prev;
+    return {
+      ...prev,
+      pharmacyForms: payload.pharmacyForms as PharmacyFormsState,
+    };
+  }
+
+  if (moduleId === 'environmental') {
+    const nextSectionMeta = { ...(prev.sectionMeta || {}) };
+    if (payload.environmentalSectionMeta && typeof payload.environmentalSectionMeta === 'object') {
+      nextSectionMeta.environmental = payload.environmentalSectionMeta as SectionPeriodMeta;
+    }
+    return {
+      ...prev,
+      environmentalChecks: Array.isArray(payload.environmentalChecks)
+        ? migrateLegacyEnvironmentalChecks(
+            payload.environmentalChecks as EnvironmentalCheckItem[],
+            today
+          )
+        : prev.environmentalChecks,
+      environmentalRoundMeta: payload.environmentalRoundMeta
+        ? hydrateEnvironmentalRoundMeta(
+            payload.environmentalRoundMeta as EnvironmentalRoundMeta,
+            today
+          )
+        : prev.environmentalRoundMeta,
+      sectionMeta: nextSectionMeta,
+    };
+  }
+
+  if (moduleId === 'oxygen') {
+    return {
+      ...prev,
+      oxygenCylinders: Array.isArray(payload.oxygenCylinders)
+        ? migrateLegacyOxygenCylinders(payload.oxygenCylinders as OxygenCylinder[], today)
+        : prev.oxygenCylinders,
+      oxygenLogs: Array.isArray(payload.oxygenLogs)
+        ? (payload.oxygenLogs as OxygenCheckLog[])
+        : prev.oxygenLogs,
+      cylinderSchedule: payload.cylinderSchedule
+        ? hydrateCylinderSchedule(payload.cylinderSchedule as CylinderMonthlySchedule, today)
+        : prev.cylinderSchedule,
+    };
+  }
+
+  if (moduleId === 'maintenance') {
+    return {
+      ...prev,
+      maintenanceTickets: Array.isArray(payload.maintenanceTickets)
+        ? (payload.maintenanceTickets as MaintenanceTicket[])
+        : prev.maintenanceTickets,
+    };
+  }
+
+  if (moduleId.startsWith('inv_')) {
+    const catId = moduleId.slice(4);
+    const nextItems = Array.isArray(payload.items)
+      ? (payload.items as InventoryItem[])
+      : prev.inventory.filter((it) => it.categoryId === catId);
+    const otherItems = prev.inventory.filter((it) => it.categoryId !== catId);
+    const nextSectionMeta = { ...(prev.sectionMeta || {}) };
+    if (payload.sectionMeta && typeof payload.sectionMeta === 'object') {
+      nextSectionMeta[catId] = payload.sectionMeta as SectionPeriodMeta;
+    }
+
+    return {
+      ...prev,
+      inventory: [...otherItems, ...nextItems],
+      sectionMeta: nextSectionMeta,
+      transferBagMeta:
+        catId === 'transfer-bag' && payload.transferBagMeta
+          ? (payload.transferBagMeta as TransferBagChecklistMeta)
+          : prev.transferBagMeta,
+      ivMedsAuditMeta:
+        catId === 'iv-meds' && payload.ivMedsAuditMeta
+          ? hydrateIvMedsAuditMeta(payload.ivMedsAuditMeta as IvMedsAuditMeta, today)
+          : prev.ivMedsAuditMeta,
+      equipmentMaintenanceLogs:
+        catId === 'equipment' && Array.isArray(payload.equipmentMaintenanceLogs)
+          ? (payload.equipmentMaintenanceLogs as EquipmentMaintenanceLogEntry[])
+          : prev.equipmentMaintenanceLogs,
+    };
+  }
+
+  return prev;
+}
 
 function migrateLegacyTransferBagInventory(inventory: InventoryItem[]): InventoryItem[] {
   const tbItems = inventory.filter((it) => it.categoryId === 'transfer-bag');
@@ -585,7 +780,35 @@ function loadInitialStore(): WardStoreData {
 }
 
 export function useWardStore() {
+  const {
+    accessStatus,
+    firebaseUser,
+    isAdmin,
+    canViewTaskModule,
+    canEditTaskModule,
+    canViewInventory,
+    canEditInventory,
+    canAddCustomInventory,
+  } = useAuth();
+
   const [data, setData] = useState<WardStoreData>(loadInitialStore);
+  const [cloudBootstrapReady, setCloudBootstrapReady] = useState(false);
+
+  const dataRef = useRef<WardStoreData>(data);
+  dataRef.current = data;
+
+  const lastSyncedHashesRef = useRef<Record<string, string>>({});
+  const writeTimersRef = useRef<Record<string, number>>({});
+  const activeSessionUidRef = useRef<string | null>(null);
+  activeSessionUidRef.current =
+    accessStatus === 'authorized' && firebaseUser?.uid ? firebaseUser.uid : null;
+
+  const clearAllWriteTimers = useCallback(() => {
+    for (const timerId of Object.values(writeTimersRef.current)) {
+      window.clearTimeout(timerId);
+    }
+    writeTimersRef.current = {};
+  }, []);
 
   useEffect(() => {
     try {
@@ -594,6 +817,288 @@ export function useWardStore() {
       // Ignore storage quota errors cleanly
     }
   }, [data]);
+
+  const canReadModule = useCallback(
+    (moduleId: string): boolean => {
+      if (accessStatus !== 'authorized') return false;
+      if (isAdmin || moduleId === 'core') return true;
+      if (TASK_MODULE_KEYS.includes(moduleId as TaskModuleKey)) {
+        return canViewTaskModule(moduleId as TaskModuleKey);
+      }
+      if (moduleId.startsWith('inv_')) {
+        return canViewInventory(moduleId.slice(4));
+      }
+      return false;
+    },
+    [accessStatus, isAdmin, canViewTaskModule, canViewInventory]
+  );
+
+  const canWriteModule = useCallback(
+    (moduleId: string): boolean => {
+      if (accessStatus !== 'authorized') return false;
+      if (isAdmin) return true;
+      if (moduleId === 'core') return canAddCustomInventory;
+      if (TASK_MODULE_KEYS.includes(moduleId as TaskModuleKey)) {
+        return canEditTaskModule(moduleId as TaskModuleKey);
+      }
+      if (moduleId.startsWith('inv_')) {
+        return canEditInventory(moduleId.slice(4));
+      }
+      return false;
+    },
+    [accessStatus, isAdmin, canAddCustomInventory, canEditTaskModule, canEditInventory]
+  );
+
+  const allCategoryIdsKey = useMemo(() => {
+    const ids = Array.from(
+      new Set([
+        ...CORE_CATEGORIES.map((c) => c.id),
+        ...(data.customCategories || []).map((c) => c.id),
+      ])
+    ).sort();
+    return ids.join(',');
+  }, [data.customCategories]);
+
+  // Step 1: Bootstrap Firestore modules once per authorized user session
+  useEffect(() => {
+    if (accessStatus !== 'authorized' || !firebaseUser?.email) {
+      clearAllWriteTimers();
+      setCloudBootstrapReady(false);
+      lastSyncedHashesRef.current = {};
+      return;
+    }
+
+    let cancelled = false;
+    const sessionUid = firebaseUser.uid;
+    const email = normalizeEmail(firebaseUser.email);
+    const today = getTodayIso();
+
+    const bootstrapFromFirestore = async () => {
+      try {
+        if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) return;
+        const corePath = 'wardModules/core';
+        let coreSnap;
+        try {
+          coreSnap = await getDoc(doc(db, 'wardModules', 'core'));
+        } catch (err) {
+          if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) return;
+          handleFirestoreError(err, OperationType.GET, corePath);
+          return;
+        }
+
+        if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) return;
+
+        if (!coreSnap.exists() && isAdmin) {
+          const payloads = buildModulePayloads(dataRef.current);
+          await Promise.all(
+            Object.entries(payloads).map(async ([modId, rawPayload]) => {
+              if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) return;
+              const cleanPayload = stripUndefinedDeep(rawPayload);
+              lastSyncedHashesRef.current[modId] = JSON.stringify(cleanPayload);
+              const modPath = `wardModules/${modId}`;
+              try {
+                await setDoc(doc(db, 'wardModules', modId), {
+                  moduleId: modId,
+                  payload: cleanPayload,
+                  updatedAt: serverTimestamp(),
+                  updatedByUid: sessionUid,
+                  updatedByEmail: email,
+                });
+              } catch (err) {
+                if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) return;
+                handleFirestoreError(err, OperationType.CREATE, modPath);
+              }
+            })
+          );
+          if (!cancelled) setCloudBootstrapReady(true);
+          return;
+        }
+
+        const catIds = allCategoryIdsKey ? allCategoryIdsKey.split(',').filter(Boolean) : [];
+        const initialCorePayload = coreSnap.exists()
+          ? (coreSnap.data()?.payload as Record<string, unknown>)
+          : null;
+        const remoteCustomCats =
+          initialCorePayload && Array.isArray(initialCorePayload.customCategories)
+            ? (initialCorePayload.customCategories as CategoryMeta[]).map((c) => c.id)
+            : [];
+        const mergedCats = Array.from(new Set([...catIds, ...remoteCustomCats]));
+
+        const readableIds = [
+          'core',
+          ...TASK_MODULE_KEYS,
+          ...mergedCats.map((id) => `inv_${id}`),
+        ].filter(canReadModule);
+
+        const snapshots = await Promise.all(
+          readableIds.map(async (modId) => {
+            if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) return null;
+            const modPath = `wardModules/${modId}`;
+            try {
+              const snap = await getDoc(doc(db, 'wardModules', modId));
+              return { modId, snap };
+            } catch (err) {
+              if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) {
+                return null;
+              }
+              handleFirestoreError(err, OperationType.GET, modPath);
+              return null;
+            }
+          })
+        );
+
+        if (cancelled || !auth.currentUser || auth.currentUser.uid !== sessionUid) return;
+
+        setData((prev) => {
+          let next = prev;
+          for (const entry of snapshots) {
+            if (!entry || !entry.snap.exists()) continue;
+            const rawPayload = entry.snap.data()?.payload as Record<string, unknown>;
+            if (!rawPayload || typeof rawPayload !== 'object') continue;
+            next = applyModulePayloadToStore(next, entry.modId, rawPayload, today);
+          }
+          const postPayloads = buildModulePayloads(next);
+          for (const entry of snapshots) {
+            if (!entry || !entry.snap.exists()) continue;
+            const hydrated = postPayloads[entry.modId];
+            if (hydrated) {
+              lastSyncedHashesRef.current[entry.modId] = JSON.stringify(
+                stripUndefinedDeep(hydrated)
+              );
+            }
+          }
+          return next;
+        });
+
+        setCloudBootstrapReady(true);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('WardCare Firestore bootstrap error:', err);
+          setCloudBootstrapReady(true);
+        }
+      }
+    };
+
+    void bootstrapFromFirestore();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessStatus, firebaseUser, isAdmin, canReadModule, allCategoryIdsKey, clearAllWriteTimers]);
+
+  // Step 2: Live real-time onSnapshot listeners ONLY for modules this user can read
+  useEffect(() => {
+    if (!cloudBootstrapReady || accessStatus !== 'authorized' || !firebaseUser) return;
+    if (!auth.currentUser || auth.currentUser.uid !== firebaseUser.uid) return;
+
+    const sessionUid = firebaseUser.uid;
+    const catIds = allCategoryIdsKey ? allCategoryIdsKey.split(',').filter(Boolean) : [];
+    const readableIds = [
+      'core',
+      ...TASK_MODULE_KEYS,
+      ...catIds.map((id) => `inv_${id}`),
+    ].filter(canReadModule);
+
+    const today = getTodayIso();
+    const unsubs = readableIds.map((modId) => {
+      const modPath = `wardModules/${modId}`;
+      return onSnapshot(
+        doc(db, 'wardModules', modId),
+        (snap) => {
+          if (!snap.exists()) return;
+          if (!auth.currentUser || auth.currentUser.uid !== sessionUid) return;
+          const rawPayload = snap.data()?.payload as Record<string, unknown>;
+          if (!rawPayload || typeof rawPayload !== 'object') return;
+          const cleanHash = JSON.stringify(stripUndefinedDeep(rawPayload));
+          if (lastSyncedHashesRef.current[modId] === cleanHash) return;
+          lastSyncedHashesRef.current[modId] = cleanHash;
+          setData((prev) => applyModulePayloadToStore(prev, modId, rawPayload, today));
+        },
+        (err) => {
+          if (
+            !auth.currentUser ||
+            auth.currentUser.uid !== sessionUid ||
+            activeSessionUidRef.current !== sessionUid
+          ) {
+            return;
+          }
+          handleFirestoreError(err, OperationType.GET, modPath);
+        }
+      );
+    });
+
+    return () => {
+      for (const unsub of unsubs) unsub();
+    };
+  }, [cloudBootstrapReady, accessStatus, firebaseUser, canReadModule, allCategoryIdsKey]);
+
+  // Step 3: Persist local edits ONLY for modules this user has write authority for
+  useEffect(() => {
+    if (!cloudBootstrapReady || accessStatus !== 'authorized' || !firebaseUser?.email) {
+      clearAllWriteTimers();
+      return;
+    }
+    const currentAuthUser = auth.currentUser;
+    if (!currentAuthUser || currentAuthUser.uid !== firebaseUser.uid) {
+      clearAllWriteTimers();
+      return;
+    }
+
+    const sessionUid = firebaseUser.uid;
+    const email = normalizeEmail(firebaseUser.email);
+    const payloads = buildModulePayloads(data);
+
+    for (const [modId, rawPayload] of Object.entries(payloads)) {
+      if (!canWriteModule(modId)) continue;
+      const cleanPayload = stripUndefinedDeep(rawPayload);
+      const nextHash = JSON.stringify(cleanPayload);
+      if (lastSyncedHashesRef.current[modId] === nextHash) continue;
+
+      lastSyncedHashesRef.current[modId] = nextHash;
+
+      if (writeTimersRef.current[modId]) {
+        window.clearTimeout(writeTimersRef.current[modId]);
+      }
+
+      writeTimersRef.current[modId] = window.setTimeout(async () => {
+        delete writeTimersRef.current[modId];
+        const liveUser = auth.currentUser;
+        if (
+          !liveUser ||
+          liveUser.uid !== sessionUid ||
+          activeSessionUidRef.current !== sessionUid
+        ) {
+          return;
+        }
+        const modPath = `wardModules/${modId}`;
+        try {
+          await setDoc(doc(db, 'wardModules', modId), {
+            moduleId: modId,
+            payload: cleanPayload,
+            updatedAt: serverTimestamp(),
+            updatedByUid: sessionUid,
+            updatedByEmail: email,
+          });
+        } catch (err) {
+          const postUser = auth.currentUser;
+          if (
+            !postUser ||
+            postUser.uid !== sessionUid ||
+            activeSessionUidRef.current !== sessionUid
+          ) {
+            return;
+          }
+          handleFirestoreError(err, OperationType.WRITE, modPath);
+        }
+      }, 220);
+    }
+  }, [data, cloudBootstrapReady, accessStatus, firebaseUser, canWriteModule, clearAllWriteTimers]);
+
+  useEffect(() => {
+    return () => {
+      clearAllWriteTimers();
+    };
+  }, [clearAllWriteTimers]);
 
   const setDefaultInspector = (name: string) => {
     setData((prev) => ({ ...prev, defaultInspector: name }));
@@ -665,9 +1170,10 @@ export function useWardStore() {
       label
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '') || `cat-${Date.now()}`;
+        .replace(/(^-|-$)/g, '')
+        .slice(0, 36) || `cat-${Date.now().toString(36)}`;
     const newCat: CategoryMeta = {
-      id: `custom-${slug}-${Date.now().toString(36).slice(-3)}`,
+      id: `custom-${slug}-${Date.now().toString(36).slice(-4)}`,
       label,
       shortLabel: label,
       description: description || 'Custom ward inventory & expiry section.',

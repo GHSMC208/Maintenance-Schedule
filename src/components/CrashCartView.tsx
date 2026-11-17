@@ -1,5 +1,6 @@
 import { CheckCircle2, Eye, FileEdit, Lock, Plus, Printer, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { PermissionLevel } from '../types/auth';
 import type { CrashCartChecklist, CrashCartItemRow } from '../types/ward';
 import {
   addDaysIso,
@@ -8,10 +9,12 @@ import {
   parseCrashCartReferenceDate,
 } from '../utils/dateUtils';
 import { CrashCartPrintView } from './CrashCartPrintView';
+import { ReadOnlyBanner, ReadOnlySurface } from './ReadOnlyBanner';
 
 interface CrashCartViewProps {
   carts: CrashCartChecklist[];
   defaultInspector: string;
+  permission?: PermissionLevel;
   onUpdateCart: (cartId: string, patch: Partial<CrashCartChecklist>) => void;
   onUpdateSlot: (cartId: string, itemId: string, slotIdx: number, value: string) => void;
   onAddCart: (defibLabel: string) => string;
@@ -42,10 +45,13 @@ function formatSlashDate(iso: string): string {
 export function CrashCartView({
   carts,
   defaultInspector,
+  permission = 'full',
   onUpdateCart,
   onUpdateSlot,
   onAddCart,
 }: CrashCartViewProps) {
+  const canEdit = permission === 'edit' || permission === 'full';
+  const canFull = permission === 'full';
   const [selectedCartId, setSelectedCartId] = useState<string>(carts[0]?.id || '');
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [sectionFilter, setSectionFilter] = useState<string>('all');
@@ -113,6 +119,7 @@ export function CrashCartView({
 
   return (
     <div className="space-y-5">
+      <ReadOnlyBanner permission={permission} sectionLabel="Crash Cart Weekly" />
       {/* Top Toolbar (hidden on print) */}
       <div className="no-print bg-white border border-slate-200 rounded-lg p-4 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -133,14 +140,16 @@ export function CrashCartView({
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => setShowAddCartModal(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Cart
-            </button>
+            {canFull && (
+              <button
+                type="button"
+                onClick={() => setShowAddCartModal(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Cart
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -155,7 +164,7 @@ export function CrashCartView({
                 }`}
               >
                 <FileEdit className="w-3.5 h-3.5" />
-                Edit Weekly Check
+                {canEdit ? 'Edit Weekly Check' : 'View Weekly Check'}
               </button>
               <button
                 type="button"
@@ -171,14 +180,16 @@ export function CrashCartView({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleCompleteWeeklyNow}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Stamp Today (+7d)
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={handleCompleteWeeklyNow}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Stamp Today (+7d)
+              </button>
+            )}
 
             <button
               type="button"
@@ -190,6 +201,8 @@ export function CrashCartView({
             </button>
           </div>
         </div>
+
+        <ReadOnlySurface readOnly={!canEdit}>
 
         {/* Cart Metadata Bar */}
         <div className="pt-3 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
@@ -271,6 +284,7 @@ export function CrashCartView({
             </label>
           </div>
         </div>
+        </ReadOnlySurface>
       </div>
 
       {/* Interactive Editor View */}
@@ -321,6 +335,7 @@ export function CrashCartView({
           </div>
 
           {/* Item Sections */}
+          <ReadOnlySurface readOnly={!canEdit}>
           {sectionFilter !== 'signoffs' &&
             visibleSections.map((sec) => {
               const secItems = activeCart.items.filter((it) => {
@@ -624,6 +639,7 @@ export function CrashCartView({
               </div>
             </section>
           )}
+          </ReadOnlySurface>
         </div>
       )}
 
