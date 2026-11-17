@@ -5,9 +5,15 @@ import type {
   SectionPeriodMeta,
   StoreStaffAssignment,
 } from '../types/ward';
-import { getCrashCartSlotExpirySeverity, getTodayIso } from '../utils/dateUtils';
+import {
+  addMonthsIso,
+  extractIsoDatesFromSlot,
+  getCrashCartSlotExpirySeverity,
+  getTodayIso,
+} from '../utils/dateUtils';
 
 export type StorePrintLayoutMode = 'two-per-sheet' | 'one-per-sheet';
+export type StorePrintScope = 'all' | 'near-expiry';
 
 interface StoreChecklistPrintViewProps {
   items: InventoryItem[];
@@ -15,6 +21,8 @@ interface StoreChecklistPrintViewProps {
   wardName: string;
   defaultInspector: string;
   layoutMode?: StorePrintLayoutMode;
+  printScope?: StorePrintScope;
+  nearExpiryMonths?: 1 | 3 | 6;
 }
 
 interface CompactStorePage {
@@ -41,10 +49,18 @@ function formatSlashDate(iso: string | null | undefined): string {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
-function expiryHl(val: string): string {
-  const sev = getCrashCartSlotExpirySeverity(val, getTodayIso());
+function expiryHl(val: string, monthsWindow: 1 | 3 | 6 = 3): string {
+  const todayIso = getTodayIso();
+  const sev = getCrashCartSlotExpirySeverity(val, todayIso);
   if (sev === 'expired') return 'bg-[#fecaca] text-[#7f1d1d] font-bold';
   if (sev === 'near-3m') return 'bg-[#fef08a] text-black font-bold';
+  if (monthsWindow > 3) {
+    const cutoffIso = addMonthsIso(todayIso, monthsWindow);
+    const dates = extractIsoDatesFromSlot(val);
+    if (dates.some((d) => d <= cutoffIso)) {
+      return 'bg-[#fef9c3] text-black font-semibold';
+    }
+  }
   return '';
 }
 
@@ -208,6 +224,8 @@ export function StoreChecklistPrintView({
   wardName,
   defaultInspector,
   layoutMode = 'two-per-sheet',
+  printScope = 'all',
+  nearExpiryMonths = 3,
 }: StoreChecklistPrintViewProps) {
   const today = getTodayIso();
   const [y, m, d] = today.split('-');
@@ -222,6 +240,12 @@ export function StoreChecklistPrintView({
   const displayMonth = meta?.month?.trim() || defaultMonth;
   const displayYear = meta?.year?.trim() || y;
   const displayMonthYear = [displayMonth, displayYear].filter(Boolean).join(' ');
+  const isNearExpiryOnly = printScope === 'near-expiry';
+  const windowLabel =
+    nearExpiryMonths === 1 ? '≤ 1 Month' : nearExpiryMonths === 6 ? '≤ 6 Months' : '≤ 3 Months';
+  const docTitle = isNearExpiryOnly
+    ? `Monthly Store checklist — Near Expiry & Expired Items (${windowLabel})`
+    : 'Monthly Store checklist';
 
   // Group Store Items by official Store Categories in exact PDF order
   const grouped = new Map<string, InventoryItem[]>();
@@ -325,7 +349,7 @@ export function StoreChecklistPrintView({
                         />
                       </div>
                       <div className="text-center font-bold text-[13.5px] mb-1.5 shrink-0">
-                        Monthly Store checklist
+                        {docTitle}
                       </div>
                       <table className="w-[54%] border-collapse border border-black mb-2 text-[9.5px] shrink-0">
                         <tbody>
@@ -349,7 +373,7 @@ export function StoreChecklistPrintView({
                   ) : (
                     <div className="flex items-center justify-between border-b border-black pb-[1mm] mb-[1.5mm] text-[9px] shrink-0">
                       <div>
-                        <span className="font-bold">Monthly Store checklist</span>
+                        <span className="font-bold">{docTitle}</span>
                         <span className="mx-1.5">·</span>
                         <span>
                           <strong>Ward:</strong> {displayWard}
@@ -362,6 +386,12 @@ export function StoreChecklistPrintView({
                       <div className="font-semibold">GH/NUR/2025-19</div>
                     </div>
                   )}
+
+                  {page.rows.length === 0 && isFirstPage && isNearExpiryOnly ? (
+                    <div className="border border-black p-6 text-center text-[10px] text-slate-700 my-4">
+                      No near-expiry or expired store items found within {windowLabel}.
+                    </div>
+                  ) : null}
 
                   {page.rows.length > 0 && (
                     <table className="w-full border-collapse table-fixed text-[8.4px] leading-[1.15]">
@@ -407,12 +437,12 @@ export function StoreChecklistPrintView({
                                 {row.qtyAvailable}
                               </td>
                               <td
-                                className={`border border-black px-1 py-[1.5px] text-center text-[7.8px] ${expiryHl(row.expiryDate1)}`}
+                                className={`border border-black px-1 py-[1.5px] text-center text-[7.8px] ${expiryHl(row.expiryDate1, nearExpiryMonths)}`}
                               >
                                 {row.expiryDate1}
                               </td>
                               <td
-                                className={`border border-black px-1 py-[1.5px] text-center text-[7.8px] ${expiryHl(row.expiryDate2)}`}
+                                className={`border border-black px-1 py-[1.5px] text-center text-[7.8px] ${expiryHl(row.expiryDate2, nearExpiryMonths)}`}
                               >
                                 {row.expiryDate2}
                               </td>
@@ -491,8 +521,8 @@ export function StoreChecklistPrintView({
                         className="h-[34px] w-auto object-contain"
                       />
                     </div>
-                    <div className="text-center font-bold text-[13.5px] tracking-tight">
-                      Monthly Store checklist
+                    <div className="text-center font-bold text-[12.5px] tracking-tight">
+                      {docTitle}
                     </div>
                     <table className="border-collapse border border-black text-[8.5px] min-w-[235px]">
                       <tbody>
@@ -518,7 +548,7 @@ export function StoreChecklistPrintView({
                 ) : (
                   <div className="flex items-center justify-between border-b border-black pb-[1mm] mb-[1.5mm] text-[8.5px] shrink-0">
                     <div>
-                      <span className="font-bold">Monthly Store checklist</span>
+                      <span className="font-bold">{docTitle}</span>
                       <span className="mx-1.5">·</span>
                       <span>
                         <strong>Ward:</strong> {displayWard}
@@ -532,11 +562,28 @@ export function StoreChecklistPrintView({
                   </div>
                 )}
 
+                {page.leftRows.length === 0 &&
+                page.rightRows.length === 0 &&
+                isFirstPage &&
+                isNearExpiryOnly ? (
+                  <div className="border border-black p-6 text-center text-[10px] text-slate-700 my-4">
+                    No near-expiry or expired store items found within {windowLabel}.
+                  </div>
+                ) : null}
+
                 {/* Dual-Panel Side-by-Side Store Tables */}
                 <div className="grid grid-cols-2 gap-[3mm] items-start flex-1">
-                  <StoreCompactPanelTable rows={page.leftRows} />
+                  <StoreCompactPanelTable
+                    rows={page.leftRows}
+                    nearExpiryMonths={nearExpiryMonths}
+                  />
                   <div className="flex flex-col">
-                    {page.rightRows.length > 0 && <StoreCompactPanelTable rows={page.rightRows} />}
+                    {page.rightRows.length > 0 && (
+                      <StoreCompactPanelTable
+                        rows={page.rightRows}
+                        nearExpiryMonths={nearExpiryMonths}
+                      />
+                    )}
 
                     {isLastPage && (
                       <div className={page.rightRows.length > 0 ? 'mt-[2mm]' : ''}>
@@ -567,7 +614,13 @@ export function StoreChecklistPrintView({
   );
 }
 
-function StoreCompactPanelTable({ rows }: { rows: MonthlyStoreRow[] }) {
+function StoreCompactPanelTable({
+  rows,
+  nearExpiryMonths = 3,
+}: {
+  rows: MonthlyStoreRow[];
+  nearExpiryMonths?: 1 | 3 | 6;
+}) {
   if (rows.length === 0) return null;
 
   return (
@@ -614,12 +667,12 @@ function StoreCompactPanelTable({ rows }: { rows: MonthlyStoreRow[] }) {
                 {row.qtyAvailable}
               </td>
               <td
-                className={`border border-black px-0.5 py-[1px] text-center text-[6.8px] ${expiryHl(row.expiryDate1)}`}
+                className={`border border-black px-0.5 py-[1px] text-center text-[6.8px] ${expiryHl(row.expiryDate1, nearExpiryMonths)}`}
               >
                 {row.expiryDate1}
               </td>
               <td
-                className={`border border-black px-0.5 py-[1px] text-center text-[6.8px] ${expiryHl(row.expiryDate2)}`}
+                className={`border border-black px-0.5 py-[1px] text-center text-[6.8px] ${expiryHl(row.expiryDate2, nearExpiryMonths)}`}
               >
                 {row.expiryDate2}
               </td>

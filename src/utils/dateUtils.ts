@@ -128,6 +128,17 @@ export function isItemAttentionNeeded(item: InventoryItem, todayIso: string): bo
   return false;
 }
 
+export function isStoreItemNearExpiry(
+  item: InventoryItem,
+  todayIso: string,
+  monthsWindow: 1 | 3 | 6 = 3
+): boolean {
+  const cutoffIso = addMonthsIso(todayIso, monthsWindow);
+  const d1 = item.expiryDate?.trim();
+  const d2 = item.secondExpiryDate?.trim();
+  return Boolean((d1 && d1 <= cutoffIso) || (d2 && d2 <= cutoffIso));
+}
+
 export function escapeCsvCell(val: string | number | boolean | null | undefined): string {
   const str = val === null || val === undefined ? '' : String(val);
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {

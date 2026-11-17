@@ -61,7 +61,7 @@ export function DataReportModal({
       'Expiry Date',
       'Expiry Status',
       'Equipment Status',
-      'Next PM Date',
+      'Next PPM Date',
       'Last Verified',
       'Verified By',
       'Notes',

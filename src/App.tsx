@@ -38,8 +38,15 @@ export default function App() {
     updateInventoryItem,
     deleteInventoryItem,
     verifyInventoryItem,
+    addEquipmentMaintenanceLog,
+    updateEquipmentMaintenanceLog,
+    deleteEquipmentMaintenanceLog,
     updateEnvironmentalCheck,
     addEnvironmentalCheck,
+    setEnvironmentalResponse,
+    setEnvironmentalGroupResponse,
+    deleteEnvironmentalCheck,
+    updateEnvironmentalRoundMeta,
     addMaintenanceTicket,
     updateMaintenanceTicketStatus,
     deleteMaintenanceTicket,
@@ -345,6 +352,10 @@ export default function App() {
                 onUpdateItem={updateInventoryItem}
                 onDeleteItem={deleteInventoryItem}
                 onVerifyItem={verifyInventoryItem}
+                equipmentMaintenanceLogs={data.equipmentMaintenanceLogs}
+                onAddEquipmentMaintenanceLog={addEquipmentMaintenanceLog}
+                onUpdateEquipmentMaintenanceLog={updateEquipmentMaintenanceLog}
+                onDeleteEquipmentMaintenanceLog={deleteEquipmentMaintenanceLog}
               />
             )}
 
@@ -352,10 +363,13 @@ export default function App() {
               <EnvironmentalRoundView
                 checks={data.environmentalChecks}
                 defaultInspector={data.defaultInspector}
-                sectionMeta={data.sectionMeta?.environmental}
-                onUpdateSectionMeta={(patch) => updateSectionMeta('environmental', patch)}
+                roundMeta={data.environmentalRoundMeta}
+                onUpdateRoundMeta={updateEnvironmentalRoundMeta}
+                onSetResponse={setEnvironmentalResponse}
+                onSetGroupResponse={setEnvironmentalGroupResponse}
                 onUpdateCheck={updateEnvironmentalCheck}
                 onAddCheck={addEnvironmentalCheck}
+                onDeleteCheck={deleteEnvironmentalCheck}
               />
             )}
 

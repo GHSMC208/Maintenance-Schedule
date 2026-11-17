@@ -4,6 +4,10 @@ import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
 import { createInitialBloodTrolleyItems } from './bloodTrolleySeed';
 import { createInitialCrashCarts } from './crashCartSeed';
 import {
+  createInitialEquipmentItems,
+  createInitialEquipmentMaintenanceLogs,
+} from './equipmentSeed';
+import {
   createInitialIvMedsAuditMeta,
   createInitialIvMedsItems,
 } from './ivMedsSeed';
@@ -22,13 +26,19 @@ import {
   createInitialTransferBagItems,
   createInitialTransferBagMeta,
 } from './transferBagSeed';
+import {
+  createInitialEnvironmentalChecks,
+  createInitialEnvironmentalRoundMeta,
+  createInitialEnvironmentalStaff,
+} from './environmentalRoundSeed';
 
 export const CORE_CATEGORIES: CategoryMeta[] = [
   {
     id: 'equipment',
     label: 'Medical Equipment',
     shortLabel: 'Medical Equipment',
-    description: 'Ward biomedical devices, operational readiness, and preventive maintenance (PPM) dates.',
+    description:
+      'Medical Equipment Monthly Inventory organized across 10 official ward tables: Patient Beds, Cardiac Monitors, CCU Central, Crash Cart Trolleys, Suction & O2, ECG, Telemetry, Alaris Infusion Pumps, and Others.',
     supportsUnitSplit: true,
     isEquipment: true,
   },
@@ -169,12 +179,42 @@ export function createInitialBloodTrolleyStaff(today: string) {
   ];
 }
 
+export function createInitialEquipmentStaff(today: string) {
+  const [y, m, d] = today.split('-');
+  const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
+  return [
+    {
+      id: 'eq-staff-1',
+      staffName: 'RN Sara Al-Mansoor',
+      role: 'Staff Nurse / CCU Lead',
+      assignedSections: 'Tables 1–5 (Beds, Monitors, Central, Crash Carts, Suction)',
+      checkedDate: slashDate,
+      signature: '',
+    },
+    {
+      id: 'eq-staff-2',
+      staffName: 'RN Nadia Omar',
+      role: 'Staff Nurse / SD & Pumps Lead',
+      assignedSections: 'Tables 6–9 (ECG, Telemetry, Alaris Pumps & Others)',
+      checkedDate: slashDate,
+      signature: '',
+    },
+  ];
+}
+
 export function createInitialSectionMeta(today: string): Record<string, SectionPeriodMeta> {
   const base = createDefaultSectionPeriodMeta(today);
   const [y, m, d] = today.split('-');
   const slashDate = y && m && d ? `${d}/${m}/${y}` : '';
   return {
-    equipment: { ...base },
+    equipment: {
+      ...base,
+      wardNumber: '208',
+      staffName: 'RN Sara Al-Mansoor',
+      signature: '',
+      date: slashDate,
+      staffAssignments: createInitialEquipmentStaff(today),
+    },
     store: {
       ...base,
       staffName: 'RN Sara Al-Mansoor',
@@ -205,7 +245,14 @@ export function createInitialSectionMeta(today: string): Record<string, SectionP
       date: slashDate,
       staffAssignments: createInitialProcedureTrolleyStaff(today),
     },
-    environmental: { ...base },
+    environmental: {
+      ...base,
+      wardNumber: '208 (CCU & Step-Down)',
+      staffName: 'RN Sara Al-Mansoor',
+      signature: '',
+      date: slashDate,
+      staffAssignments: createInitialEnvironmentalStaff(today),
+    },
   };
 }
 
@@ -226,6 +273,8 @@ export function createInitialWardData(): WardStoreData {
     transferBagMeta: createInitialTransferBagMeta(today),
     ivMedsAuditMeta: createInitialIvMedsAuditMeta(today),
     sectionMeta: createInitialSectionMeta(today),
+    environmentalRoundMeta: createInitialEnvironmentalRoundMeta(today),
+    equipmentMaintenanceLogs: createInitialEquipmentMaintenanceLogs(today),
     lastBackupDate: null,
     tasks: [
       {
@@ -347,109 +396,8 @@ export function createInitialWardData(): WardStoreData {
       },
     ],
     inventory: [
-      // Medical Equipment
-      {
-        id: 'eq-01',
-        categoryId: 'equipment',
-        name: 'Philips IntelliVue MX550 Patient Monitor (Bed 01)',
-        unit: 'CCU',
-        locationDetail: 'CCU Bed 01',
-        quantity: 1,
-        parLevel: 1,
-        unitOfMeasure: 'unit',
-        batchOrSerial: 'SN-MX550-8812',
-        expiryDate: null,
-        equipmentStatus: 'Operational',
-        nextPmDate: addDaysIso(today, 75),
-        lastCheckedDate: addDaysIso(today, -5),
-        lastCheckedBy: 'RN Sara Al-Mansoor',
-        notes: 'ECG, NIBP, SpO2, and invasive arterial line modules calibrated.',
-      },
-      {
-        id: 'eq-02',
-        categoryId: 'equipment',
-        name: 'B.Braun Perfusor Space Syringe Pump #04',
-        unit: 'CCU',
-        locationDetail: 'CCU Bed 03 Rack',
-        quantity: 1,
-        parLevel: 1,
-        unitOfMeasure: 'unit',
-        batchOrSerial: 'SN-BB-44901',
-        expiryDate: null,
-        equipmentStatus: 'Needs Calibration',
-        nextPmDate: addDaysIso(today, 4),
-        lastCheckedDate: addDaysIso(today, -2),
-        lastCheckedBy: 'RN Khalid Hassan',
-        notes: 'Occlusion alarm threshold due for annual Biomed verification.',
-      },
-      {
-        id: 'eq-03',
-        categoryId: 'equipment',
-        name: 'Zoll R-Series Biphasic Defibrillator (Crash Cart)',
-        unit: 'CCU',
-        locationDetail: 'CCU Central Bay',
-        quantity: 1,
-        parLevel: 1,
-        unitOfMeasure: 'unit',
-        batchOrSerial: 'SN-ZOL-1094',
-        expiryDate: null,
-        equipmentStatus: 'Operational',
-        nextPmDate: addDaysIso(today, 45),
-        lastCheckedDate: today,
-        lastCheckedBy: 'RN Sara Al-Mansoor',
-        notes: 'Daily 30J test passed; pacing cable & adult pads verified.',
-      },
-      {
-        id: 'eq-04',
-        categoryId: 'equipment',
-        name: 'Mindray BeneVision N12 Monitor (SD Bed 06)',
-        unit: 'SD',
-        locationDetail: 'SD Bed 06',
-        quantity: 1,
-        parLevel: 1,
-        unitOfMeasure: 'unit',
-        batchOrSerial: 'SN-MN12-3029',
-        expiryDate: null,
-        equipmentStatus: 'Under Maintenance',
-        nextPmDate: addDaysIso(today, -3),
-        lastCheckedDate: addDaysIso(today, -3),
-        lastCheckedBy: 'Biomed Tech Rami',
-        notes: 'SpO2 sensor port intermittent; loaned backup monitor placed at Bed 06.',
-      },
-      {
-        id: 'eq-05',
-        categoryId: 'equipment',
-        name: 'Portable Electric Suction Unit (Laerdal LCSU4)',
-        unit: 'SD',
-        locationDetail: 'SD Equipment Alcove',
-        quantity: 2,
-        parLevel: 2,
-        unitOfMeasure: 'units',
-        batchOrSerial: 'SN-LDU-7720',
-        expiryDate: null,
-        equipmentStatus: 'Operational',
-        nextPmDate: addDaysIso(today, 90),
-        lastCheckedDate: addDaysIso(today, -7),
-        lastCheckedBy: 'RN Nadia Omar',
-        notes: 'Battery holds 100% charge; spare disposable canisters stocked.',
-      },
-      {
-        id: 'eq-06',
-        categoryId: 'equipment',
-        name: '12-Lead ECG Cart (GE MAC 2000)',
-        unit: 'General Ward',
-        locationDetail: 'Nurses Station Alcove',
-        quantity: 1,
-        parLevel: 1,
-        unitOfMeasure: 'unit',
-        batchOrSerial: 'SN-GE2K-5120',
-        expiryDate: null,
-        equipmentStatus: 'Operational',
-        nextPmDate: addDaysIso(today, 60),
-        lastCheckedDate: addDaysIso(today, -4),
-        lastCheckedBy: 'RN Tariq Youssef',
-        notes: 'Thermal paper stocked; lead wires intact.',
-      },
+      // Medical Equipment (Official 10-Table Monthly Inventory)
+      ...createInitialEquipmentItems(today),
 
       // Store Items (Official Store Checklist Catalog)
       ...createInitialStoreItems(today),
@@ -469,104 +417,7 @@ export function createInitialWardData(): WardStoreData {
       // Emergency Patient Transfer Bag (Official 28-Item Emergency Bag Checklist)
       ...createInitialTransferBagItems(today),
     ],
-    environmentalChecks: [
-      {
-        id: 'env-01',
-        section: 'Fire-Extinguishing & Life Safety',
-        title: 'CO2 Fire Extinguisher #1 (CCU Corridor) — Gauge in Green Zone & Pin Sealed',
-        location: 'CCU Main Entrance',
-        frequency: 'monthly',
-        result: 'pass',
-        measuredValue: 'Green Zone / Seal #F-991',
-        lastCheckedDate: addDaysIso(today, -12),
-        inspector: 'Safety Officer',
-        notes: 'Annual tag valid until Aug 2027.',
-      },
-      {
-        id: 'env-02',
-        section: 'Fire-Extinguishing & Life Safety',
-        title: 'ABC Dry Powder Fire Extinguisher #2 (SD Corridor) — Pressure & Hose Check',
-        location: 'SD Nurse Station Wall',
-        frequency: 'monthly',
-        result: 'action-needed',
-        measuredValue: 'Mounting bracket loose',
-        lastCheckedDate: addDaysIso(today, -2),
-        inspector: 'RN Sara Al-Mansoor',
-        notes: 'Pressure OK, but wall mounting bracket screw is loose; ticket raised to Fire Safety.',
-      },
-      {
-        id: 'env-03',
-        section: 'Fire-Extinguishing & Life Safety',
-        title: 'Fire Hose Reel & Fire Blanket Cabinet Unobstructed',
-        location: 'Central Corridor East',
-        frequency: 'weekly',
-        result: 'pass',
-        measuredValue: 'Clear > 1.5m radius',
-        lastCheckedDate: addDaysIso(today, -4),
-        inspector: 'RN Khalid Hassan',
-        notes: 'No stretchers or trolleys blocking cabinet.',
-      },
-      {
-        id: 'env-04',
-        section: 'Fire-Extinguishing & Life Safety',
-        title: 'Emergency Exit Doors & Illuminated Exit Signs',
-        location: 'North & South Stairwells',
-        frequency: 'weekly',
-        result: 'pass',
-        measuredValue: 'Illuminated / Push-bar free',
-        lastCheckedDate: addDaysIso(today, -4),
-        inspector: 'RN Khalid Hassan',
-        notes: 'Both exit doors open smoothly.',
-      },
-      {
-        id: 'env-05',
-        section: 'Ward Environment & Cold Chain',
-        title: 'Medication Refrigerator Temperature Log (2°C – 8°C)',
-        location: 'CCU & SD Prep Rooms',
-        frequency: 'weekly',
-        result: 'pass',
-        measuredValue: '4.2°C (CCU) / 4.6°C (SD)',
-        lastCheckedDate: today,
-        inspector: 'RN Sara Al-Mansoor',
-        notes: 'Min/max digital probe within safe range.',
-      },
-      {
-        id: 'env-06',
-        section: 'Ward Environment & Cold Chain',
-        title: 'Preparation Room Ambient Temperature & Humidity (18°C–24°C / <60% RH)',
-        location: 'CCU Prep Room',
-        frequency: 'weekly',
-        result: 'action-needed',
-        measuredValue: '25.8°C / 62% RH',
-        lastCheckedDate: addDaysIso(today, -1),
-        inspector: 'RN Nadia Omar',
-        notes: 'AC vent airflow weak; HVAC follow-up requested.',
-      },
-      {
-        id: 'env-07',
-        section: 'Clinical Utilities & Waste',
-        title: 'Wall Medical Gas Outlets (O2, Air, Vacuum) & Bedside Call Bells',
-        location: 'CCU Beds 1–6 & SD Beds 1–8',
-        frequency: 'monthly',
-        result: 'pass',
-        measuredValue: 'All 14 beds tested',
-        lastCheckedDate: addDaysIso(today, -10),
-        inspector: 'RN Tariq Youssef',
-        notes: 'All nurse call cords and emergency pull switches responsive.',
-      },
-      {
-        id: 'env-08',
-        section: 'Clinical Utilities & Waste',
-        title: 'Biohazard & Sharps Containers (< 3/4 Full) and Hand Hygiene Dispensers',
-        location: 'All Utility & Clinical Bays',
-        frequency: 'weekly',
-        result: 'pass',
-        measuredValue: 'Compliant',
-        lastCheckedDate: addDaysIso(today, -1),
-        inspector: 'RN Sara Al-Mansoor',
-        notes: 'Alcohol gel cartridges topped up.',
-      },
-    ],
+    environmentalChecks: createInitialEnvironmentalChecks(today),
     maintenanceTickets: [
       {
         id: 'mnt-01',

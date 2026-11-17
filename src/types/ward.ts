@@ -61,29 +61,85 @@ export interface InventoryItem {
   expiryDisplay?: string; // Verbatim expiry text (e.g., "21/11/2026, 18/11/2026", "03/2030", "NIL", "CSSD")
   equipmentStatus?: EquipmentStatus;
   nextPmDate?: string | null; // YYYY-MM-DD (used for medical equipment PPM)
+  extraColumns?: Record<string, string>; // Table-specific multi-column fields (e.g., monitor accessories, crash cart trolley accessories, suction/oxygenation)
   lastCheckedDate: string;
   lastCheckedBy: string;
   notes: string;
 }
 
+export type EquipmentMaintenanceLogStatus =
+  | 'Open'
+  | 'Reported to Biomed'
+  | 'Sent to Workshop'
+  | 'Awaiting Parts'
+  | 'Repaired / Returned';
+
+export interface EquipmentMaintenanceLogEntry {
+  id: string;
+  equipmentItemId?: string;
+  equipmentName: string;
+  tableName: string;
+  mohNumber: string;
+  unit: 'CCU' | 'SD' | 'General Ward';
+  issueDescription: string;
+  reportedDate: string;
+  reportedBy: string;
+  workOrderNo: string;
+  serviceDepartment: string;
+  actionTaken: string;
+  status: EquipmentMaintenanceLogStatus;
+  resolvedDate: string | null;
+  verifiedBy: string;
+}
+
 export type EnvironmentalSection =
   | 'Fire-Extinguishing & Life Safety'
   | 'Ward Environment & Cold Chain'
-  | 'Clinical Utilities & Waste';
+  | 'Clinical Utilities & Waste'
+  | string;
 
 export type RoundCheckResult = 'pass' | 'action-needed' | 'pending';
+export type EnvironmentalResponse = 'yes' | 'no' | 'na';
 
 export interface EnvironmentalCheckItem {
   id: string;
   section: EnvironmentalSection;
+  domainHeading?: string;
+  groupId?: string;
+  groupTitle?: string;
+  questionCode?: string;
   title: string;
   location: string;
   frequency: TaskFrequency;
   result: RoundCheckResult;
+  response?: EnvironmentalResponse;
   measuredValue?: string;
   lastCheckedDate: string | null;
   inspector: string | null;
   notes: string;
+  isCustom?: boolean;
+}
+
+export interface EnvironmentalFollowUpRow {
+  id: string;
+  issue: string;
+  date: string;
+  responsibleDept: string;
+  workOrderSubmitted: boolean;
+  dateCompleted: string;
+  highlightRed?: boolean;
+  linkedTicketId?: string;
+}
+
+export interface EnvironmentalRoundMeta {
+  departmentInspected: string;
+  inspectionDateMonth: string;
+  managerHead: string;
+  groupComments: Record<string, string>;
+  followUpTableHeader: string;
+  followUpRows: EnvironmentalFollowUpRow[];
+  followUpFooterNote: string;
+  staffAssignments: StoreStaffAssignment[];
 }
 
 export type TicketPriority = 'Urgent' | 'Routine';
@@ -102,6 +158,7 @@ export interface MaintenanceTicket {
   targetDate: string;
   resolvedDate: string | null;
   notes: string;
+  linkedFollowUpId?: string;
 }
 
 export interface OxygenCylinder {
@@ -406,5 +463,7 @@ export interface WardStoreData {
   transferBagMeta?: TransferBagChecklistMeta;
   ivMedsAuditMeta?: IvMedsAuditMeta;
   sectionMeta?: Record<string, SectionPeriodMeta>;
+  environmentalRoundMeta?: EnvironmentalRoundMeta;
+  equipmentMaintenanceLogs?: EquipmentMaintenanceLogEntry[];
   lastBackupDate: string | null;
 }

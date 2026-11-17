@@ -12,11 +12,13 @@ import {
   Search,
   Trash2,
   Users,
+  Wrench,
   XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type {
   CategoryMeta,
+  EquipmentMaintenanceLogEntry,
   EquipmentStatus,
   InventoryItem,
   SectionPeriodMeta,
@@ -29,17 +31,33 @@ import {
   getExpiryStatus,
   getTodayIso,
   isItemAttentionNeeded,
+  isStoreItemNearExpiry,
 } from '../utils/dateUtils';
 import { BLOOD_TROLLEY_DRAWERS } from '../data/bloodTrolleySeed';
+import {
+  computeTable5ColumnTotals,
+  EQUIPMENT_TABLES,
+  getEquipmentTableExtraCols,
+  isEquipmentAccessoryTicked,
+  isTickableEquipmentTable,
+} from '../data/equipmentSeed';
 import { getEarliestIsoFromExpiryText } from '../data/prepRoomSeed';
 import { STORE_SECTIONS } from '../data/storeItemsSeed';
 import { BloodTrolleyPrintView, type BloodTrolleyPrintScope } from './BloodTrolleyPrintView';
 import { EmergencyBagPrintView } from './EmergencyBagPrintView';
+import { EquipmentMaintenanceLogSection } from './EquipmentMaintenanceLogSection';
+import {
+  EquipmentPrintView,
+  type EquipmentMaintenancePrintFilter,
+  type EquipmentPrintLayoutMode,
+  type EquipmentPrintScope,
+} from './EquipmentPrintView';
 import { PrepRoomPrintView, type PrepRoomPrintScope } from './PrepRoomPrintView';
 import { ProcedureTrolleyPrintView } from './ProcedureTrolleyPrintView';
 import {
   StoreChecklistPrintView,
   type StorePrintLayoutMode,
+  type StorePrintScope,
 } from './StoreChecklistPrintView';
 
 interface InventoryModuleViewProps {
@@ -55,6 +73,17 @@ interface InventoryModuleViewProps {
   onUpdateItem: (itemId: string, patch: Partial<InventoryItem>) => void;
   onDeleteItem: (itemId: string) => void;
   onVerifyItem: (itemId: string, inspector: string) => void;
+  equipmentMaintenanceLogs?: EquipmentMaintenanceLogEntry[];
+  onAddEquipmentMaintenanceLog?: (
+    entry: Omit<EquipmentMaintenanceLogEntry, 'id'>,
+    syncEquipmentStatus?: EquipmentStatus
+  ) => void;
+  onUpdateEquipmentMaintenanceLog?: (
+    entryId: string,
+    patch: Partial<EquipmentMaintenanceLogEntry>,
+    syncEquipmentStatus?: EquipmentStatus
+  ) => void;
+  onDeleteEquipmentMaintenanceLog?: (entryId: string) => void;
 }
 
 export function InventoryModuleView({
@@ -70,6 +99,10 @@ export function InventoryModuleView({
   onUpdateItem,
   onDeleteItem,
   onVerifyItem,
+  equipmentMaintenanceLogs = [],
+  onAddEquipmentMaintenanceLog,
+  onUpdateEquipmentMaintenanceLog,
+  onDeleteEquipmentMaintenanceLog,
 }: InventoryModuleViewProps) {
   const today = getTodayIso();
   const isTransferBag = category.id === 'transfer-bag';
@@ -77,11 +110,16 @@ export function InventoryModuleView({
   const isProcedureTrolley = category.id === 'procedure-trolley';
   const isPrepRoom = category.id === 'prep-room';
   const isBloodTrolley = category.id === 'blood-trolley';
+  const isEquipmentModule = category.id === 'equipment';
   const [viewMode, setViewMode] = useState<'editor' | 'print-preview'>('editor');
   const [unitFilter, setUnitFilter] = useState<'All' | 'CCU' | 'SD' | 'General Ward'>('All');
   const [storeSectionFilter, setStoreSectionFilter] = useState<string>('All');
   const [bloodTrolleyDrawerFilter, setBloodTrolleyDrawerFilter] = useState<string>('All');
+  const [equipmentTableFilter, setEquipmentTableFilter] = useState<string>('All');
   const [storePrintLayout, setStorePrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
+  const [storePrintScope, setStorePrintScope] = useState<StorePrintScope>('all');
+  const [storeNearExpiryMonths, setStoreNearExpiryMonths] = useState<1 | 3 | 6>(3);
+  const [storeEditorNearExpiryOnly, setStoreEditorNearExpiryOnly] = useState<boolean>(false);
   const [trolleyPrintLayout, setTrolleyPrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
   const [prepRoomPrintScope, setPrepRoomPrintScope] = useState<PrepRoomPrintScope>('both');
   const [prepRoomPrintLayout, setPrepRoomPrintLayout] = useState<StorePrintLayoutMode>('two-per-sheet');
@@ -89,7 +127,19 @@ export function InventoryModuleView({
     useState<BloodTrolleyPrintScope>('both');
   const [bloodTrolleyPrintLayout, setBloodTrolleyPrintLayout] =
     useState<StorePrintLayoutMode>('two-per-sheet');
+  const [equipmentPrintLayout, setEquipmentPrintLayout] =
+    useState<EquipmentPrintLayoutMode>('grouped');
+  const [equipmentPrintScope, setEquipmentPrintScope] =
+    useState<EquipmentPrintScope>('all');
+  const [includeEquipmentMaintenanceLog, setIncludeEquipmentMaintenanceLog] = useState(true);
+  const [equipmentMaintenancePrintFilter, setEquipmentMaintenancePrintFilter] =
+    useState<EquipmentMaintenancePrintFilter>('all');
+  const [preselectedItemForRepair, setPreselectedItemForRepair] =
+    useState<InventoryItem | null>(null);
   const [collapsedStoreSections, setCollapsedStoreSections] = useState<Record<string, boolean>>({});
+  const [collapsedEquipmentTables, setCollapsedEquipmentTables] = useState<Record<string, boolean>>(
+    {}
+  );
   const [statusFilter, setStatusFilter] = useState<'all' | 'attention'>('all');
   const [search, setSearch] = useState('');
 
@@ -111,6 +161,7 @@ export function InventoryModuleView({
   const [formEqStatus, setFormEqStatus] = useState<EquipmentStatus>('Operational');
   const [formNextPm, setFormNextPm] = useState('');
   const [formNotes, setFormNotes] = useState('');
+  const [formExtraCols, setFormExtraCols] = useState<Record<string, string>>({});
 
   const categoryItems = useMemo(
     () => items.filter((it) => it.categoryId === category.id),
@@ -175,6 +226,26 @@ export function InventoryModuleView({
     return categoryItems.filter((it) => it.unit === unitFilter).length;
   }, [categoryItems, isBloodTrolley, unitFilter]);
 
+  const equipmentTablesSummary = useMemo(() => {
+    if (!isEquipmentModule) return [];
+    const counts = new Map<string, number>();
+    for (const tbl of EQUIPMENT_TABLES) counts.set(tbl, 0);
+    for (const it of categoryItems) {
+      if (unitFilter !== 'All' && it.unit !== unitFilter) continue;
+      const key = it.locationDetail?.trim() || 'Table 9 - Others';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => ({ name, count }));
+  }, [categoryItems, isEquipmentModule, unitFilter]);
+
+  const equipmentUnitTotal = useMemo(() => {
+    if (!isEquipmentModule) return 0;
+    if (unitFilter === 'All') return categoryItems.length;
+    return categoryItems.filter((it) => it.unit === unitFilter).length;
+  }, [categoryItems, isEquipmentModule, unitFilter]);
+
   const filteredItems = useMemo(() => {
     return categoryItems.filter((it) => {
       if (category.supportsUnitSplit && unitFilter !== 'All' && it.unit !== unitFilter) return false;
@@ -188,12 +259,28 @@ export function InventoryModuleView({
       ) {
         return false;
       }
+      if (
+        isEquipmentModule &&
+        equipmentTableFilter !== 'All' &&
+        it.locationDetail !== equipmentTableFilter
+      ) {
+        return false;
+      }
+      if (
+        isStore &&
+        storeEditorNearExpiryOnly &&
+        !isStoreItemNearExpiry(it, today, storeNearExpiryMonths)
+      ) {
+        return false;
+      }
       if (!isStore && statusFilter === 'attention' && !isItemAttentionNeeded(it, today)) {
         return false;
       }
       if (search.trim()) {
         const q = search.toLowerCase();
-        const hay = `${it.name} ${it.locationDetail} ${it.batchOrSerial} ${it.otherCode || ''} ${it.notes}`.toLowerCase();
+        const extraHay = it.extraColumns ? Object.values(it.extraColumns).join(' ') : '';
+        const hay =
+          `${it.name} ${it.locationDetail} ${it.batchOrSerial} ${it.otherCode || ''} ${it.notes} ${extraHay}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -204,18 +291,44 @@ export function InventoryModuleView({
     unitFilter,
     isStore,
     storeSectionFilter,
+    storeEditorNearExpiryOnly,
+    storeNearExpiryMonths,
     isBloodTrolley,
     bloodTrolleyDrawerFilter,
+    isEquipmentModule,
+    equipmentTableFilter,
     statusFilter,
     search,
     today,
   ]);
 
+  const storeNearExpiryCount = useMemo(() => {
+    if (!isStore) return 0;
+    return categoryItems.filter((it) =>
+      isStoreItemNearExpiry(it, today, storeNearExpiryMonths)
+    ).length;
+  }, [categoryItems, isStore, today, storeNearExpiryMonths]);
+
   const printableStoreItems = useMemo(() => {
     if (!isStore) return categoryItems;
-    if (storeSectionFilter === 'All') return categoryItems;
-    return categoryItems.filter((it) => it.locationDetail === storeSectionFilter);
-  }, [categoryItems, isStore, storeSectionFilter]);
+    return categoryItems.filter((it) => {
+      if (storeSectionFilter !== 'All' && it.locationDetail !== storeSectionFilter) return false;
+      if (
+        storePrintScope === 'near-expiry' &&
+        !isStoreItemNearExpiry(it, today, storeNearExpiryMonths)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    categoryItems,
+    isStore,
+    storeSectionFilter,
+    storePrintScope,
+    storeNearExpiryMonths,
+    today,
+  ]);
 
   const groupedStoreSections = useMemo(() => {
     if (!isStore) return [];
@@ -232,6 +345,29 @@ export function InventoryModuleView({
       .map(([name, list]) => ({ name, items: list }));
   }, [filteredItems, isStore]);
 
+  const groupedEquipmentTables = useMemo(() => {
+    if (!isEquipmentModule) return [];
+    const map = new Map<string, InventoryItem[]>();
+    for (const tbl of EQUIPMENT_TABLES) map.set(tbl, []);
+    for (const it of filteredItems) {
+      const key = it.locationDetail?.trim() || 'Table 9 - Others';
+      const bucket = map.get(key);
+      if (bucket) bucket.push(it);
+      else map.set(key, [it]);
+    }
+    return Array.from(map.entries())
+      .filter(([, list]) => list.length > 0)
+      .map(([name, list]) => ({ name, items: list }));
+  }, [filteredItems, isEquipmentModule]);
+
+  const table5ColumnTotals = useMemo(() => {
+    if (!isEquipmentModule) return {};
+    const table5AllItems = categoryItems.filter(
+      (it) => it.locationDetail?.trim() === 'Table 5 – Suction and Oxygenation Items'
+    );
+    return computeTable5ColumnTotals(table5AllItems);
+  }, [categoryItems, isEquipmentModule]);
+
   const toggleStoreSection = (secName: string) => {
     setCollapsedStoreSections((prev) => ({
       ...prev,
@@ -245,6 +381,21 @@ export function InventoryModuleView({
       next[sec.name] = collapsed;
     }
     setCollapsedStoreSections(next);
+  };
+
+  const toggleEquipmentTable = (tableName: string) => {
+    setCollapsedEquipmentTables((prev) => ({
+      ...prev,
+      [tableName]: !prev[tableName],
+    }));
+  };
+
+  const setAllEquipmentTablesCollapsed = (collapsed: boolean) => {
+    const next: Record<string, boolean> = {};
+    for (const tbl of groupedEquipmentTables) {
+      next[tbl.name] = collapsed;
+    }
+    setCollapsedEquipmentTables(next);
   };
 
   const sectionStaffAssignments: StoreStaffAssignment[] = useMemo(() => {
@@ -261,7 +412,9 @@ export function InventoryModuleView({
             ? 'pr-staff-1'
             : isBloodTrolley
               ? 'bt-staff-1'
-              : 'st-staff-1',
+              : isEquipmentModule
+                ? 'eq-staff-1'
+                : 'st-staff-1',
         staffName: sectionMeta?.staffName ?? defaultInspector,
         role: isProcedureTrolley
           ? 'Staff Nurse / Trolley Lead'
@@ -269,19 +422,31 @@ export function InventoryModuleView({
             ? 'Staff Nurse / CCU & SD Lead'
             : isBloodTrolley
               ? 'Staff Nurse / Trolley Lead'
-              : 'Staff Nurse / Store Lead',
+              : isEquipmentModule
+                ? 'Staff Nurse / Equipment Lead'
+                : 'Staff Nurse / Store Lead',
         assignedSections: isProcedureTrolley
           ? 'All Procedure Trolley Items (No. 1–42)'
           : isPrepRoom
             ? 'CCU & SD Preparation Room Checklists'
             : isBloodTrolley
               ? 'All Drawers (1st – 4th Drawer)'
-              : 'All Store Categories',
+              : isEquipmentModule
+                ? 'All Medical Equipment Tables (1–9)'
+                : 'All Store Categories',
         checkedDate: sectionMeta?.date || slashDate,
         signature: sectionMeta?.signature || '',
       },
     ];
-  }, [sectionMeta, defaultInspector, today, isProcedureTrolley, isPrepRoom, isBloodTrolley]);
+  }, [
+    sectionMeta,
+    defaultInspector,
+    today,
+    isProcedureTrolley,
+    isPrepRoom,
+    isBloodTrolley,
+    isEquipmentModule,
+  ]);
 
   const syncSectionStaffList = (nextList: StoreStaffAssignment[]) => {
     if (!onUpdateSectionMeta) return;
@@ -312,7 +477,15 @@ export function InventoryModuleView({
       ...sectionStaffAssignments,
       {
         id: `${
-          isProcedureTrolley ? 'pt' : isPrepRoom ? 'pr' : isBloodTrolley ? 'bt' : 'st'
+          isProcedureTrolley
+            ? 'pt'
+            : isPrepRoom
+              ? 'pr'
+              : isBloodTrolley
+                ? 'bt'
+                : isEquipmentModule
+                  ? 'eq'
+                  : 'st'
         }-staff-${Date.now().toString(36)}`,
         staffName: '',
         role: 'Staff Nurse',
@@ -329,32 +502,45 @@ export function InventoryModuleView({
     syncSectionStaffList(sectionStaffAssignments.filter((_, i) => i !== idx));
   };
 
-  const openAdd = (presetStoreSection?: string) => {
+  const openAdd = (presetSectionOrTable?: string) => {
     const defaultPrepUnit: 'CCU' | 'SD' = unitFilter === 'SD' ? 'SD' : 'CCU';
+    const defaultEqUnit: 'CCU' | 'SD' | 'General Ward' =
+      unitFilter === 'SD' ? 'SD' : unitFilter === 'General Ward' ? 'General Ward' : 'CCU';
+    const targetEqTable =
+      presetSectionOrTable ||
+      (equipmentTableFilter !== 'All' ? equipmentTableFilter : EQUIPMENT_TABLES[0]);
+    const nextEqRowNo = isEquipmentModule
+      ? String(categoryItems.filter((it) => it.locationDetail === targetEqTable).length + 1)
+      : '';
+
     setEditingItem(null);
     setFormName('');
     setFormUnit(
       isPrepRoom || isBloodTrolley
         ? defaultPrepUnit
-        : category.supportsUnitSplit
-          ? 'CCU'
-          : 'General Ward'
+        : isEquipmentModule
+          ? defaultEqUnit
+          : category.supportsUnitSplit
+            ? 'CCU'
+            : 'General Ward'
     );
     setFormLocation(
       isStore
-        ? presetStoreSection ||
+        ? presetSectionOrTable ||
             (storeSectionFilter !== 'All' ? storeSectionFilter : STORE_SECTIONS[0])
-        : isProcedureTrolley
-          ? `No. ${categoryItems.length + 1}`
-          : isPrepRoom
-            ? `${defaultPrepUnit} Prep Room #${String(
-                categoryItems.filter((it) => it.unit === defaultPrepUnit).length + 1
-              ).padStart(2, '0')}`
-            : isBloodTrolley
-              ? bloodTrolleyDrawerFilter !== 'All'
-                ? bloodTrolleyDrawerFilter
-                : BLOOD_TROLLEY_DRAWERS[0]
-              : ''
+        : isEquipmentModule
+          ? targetEqTable
+          : isProcedureTrolley
+            ? `No. ${categoryItems.length + 1}`
+            : isPrepRoom
+              ? `${defaultPrepUnit} Prep Room #${String(
+                  categoryItems.filter((it) => it.unit === defaultPrepUnit).length + 1
+                ).padStart(2, '0')}`
+              : isBloodTrolley
+                ? bloodTrolleyDrawerFilter !== 'All'
+                  ? bloodTrolleyDrawerFilter
+                  : BLOOD_TROLLEY_DRAWERS[0]
+                : ''
     );
     setFormQty(
       category.isEquipment
@@ -376,13 +562,14 @@ export function InventoryModuleView({
     );
     setFormUom(category.isEquipment ? 'unit' : 'pcs');
     setFormBatch(isPrepRoom && defaultPrepUnit === 'CCU' ? 'CSSD' : '');
-    setFormOtherCode('');
+    setFormOtherCode(nextEqRowNo);
     setFormExpiry('');
     setFormExpiryDisplay('');
     setFormSecondExpiry('');
     setFormEqStatus('Operational');
     setFormNextPm('');
     setFormNotes('');
+    setFormExtraCols({});
     setShowAddModal(true);
   };
 
@@ -408,6 +595,7 @@ export function InventoryModuleView({
     setFormEqStatus(item.equipmentStatus || 'Operational');
     setFormNextPm(item.nextPmDate || '');
     setFormNotes(item.notes);
+    setFormExtraCols(item.extraColumns ? { ...item.extraColumns } : {});
     setShowAddModal(true);
   };
 
@@ -422,6 +610,30 @@ export function InventoryModuleView({
           ? formExpiry
           : null;
 
+    const eqTableCols = isEquipmentModule ? getEquipmentTableExtraCols(formLocation) : [];
+    const cleanedExtraCols = isEquipmentModule
+      ? (() => {
+          const out: Record<string, string> = {};
+          const isTickTable =
+            isTickableEquipmentTable(formLocation) &&
+            !(
+              formLocation === 'Table 5 – Suction and Oxygenation Items' &&
+              (formOtherCode.trim() === 'Store' || formOtherCode.trim() === 'Total')
+            );
+          for (const col of eqTableCols) {
+            if (isTickTable) {
+              out[col.key] = isEquipmentAccessoryTicked(formExtraCols[col.key]) ? '✓' : '';
+            } else {
+              out[col.key] = (formExtraCols[col.key] || '').trim();
+            }
+          }
+          if (formLocation === 'Table 4 – Crash Cart Trolleys') {
+            out.defibrillator = (formExtraCols.defibrillator || formName).trim();
+          }
+          return Object.keys(out).length > 0 ? out : undefined;
+        })()
+      : editingItem?.extraColumns;
+
     const payload: Omit<InventoryItem, 'id'> = {
       categoryId: category.id,
       name: formName.trim(),
@@ -431,7 +643,8 @@ export function InventoryModuleView({
       parLevel: Math.max(0, Number(formPar) || 0),
       unitOfMeasure: formUom.trim() || 'pcs',
       batchOrSerial: formBatch.trim() || '—',
-      otherCode: isStore ? formOtherCode.trim() || undefined : editingItem?.otherCode,
+      otherCode:
+        isStore || isEquipmentModule ? formOtherCode.trim() || undefined : editingItem?.otherCode,
       expiryDate: computedExpiryDate,
       expiryDisplay:
         isPrepRoom || isBloodTrolley ? formExpiryDisplay.trim() : editingItem?.expiryDisplay,
@@ -443,6 +656,7 @@ export function InventoryModuleView({
           : editingItem?.secondExpiryDate,
       equipmentStatus: category.isEquipment ? formEqStatus : undefined,
       nextPmDate: category.isEquipment ? formNextPm || null : undefined,
+      extraColumns: cleanedExtraCols,
       lastCheckedDate: today,
       lastCheckedBy: defaultInspector,
       notes: formNotes.trim(),
@@ -498,7 +712,7 @@ export function InventoryModuleView({
             )}
             <div>
               <div className="text-[11px] font-medium text-slate-500">
-                {category.isEquipment ? 'Needs Maintenance / PM' : 'Below Par Stock'}
+                {category.isEquipment ? 'Needs Maintenance / PPM' : 'Below Par Stock'}
               </div>
               <div
                 className={`text-xl font-semibold font-mono tabular-nums ${
@@ -508,6 +722,26 @@ export function InventoryModuleView({
                 {summary.lowStockOrFault}
               </div>
             </div>
+            {isEquipmentModule && (
+              <div>
+                <div className="text-[11px] font-medium text-slate-500">
+                  Active Repair Logs
+                </div>
+                <div
+                  className={`text-xl font-semibold font-mono tabular-nums ${
+                    equipmentMaintenanceLogs.filter((l) => l.status !== 'Repaired / Returned')
+                      .length > 0
+                      ? 'text-rose-700'
+                      : 'text-emerald-700'
+                  }`}
+                >
+                  {
+                    equipmentMaintenanceLogs.filter((l) => l.status !== 'Repaired / Returned')
+                      .length
+                  }
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -549,7 +783,7 @@ export function InventoryModuleView({
                 </div>
               </div>
 
-              {(isProcedureTrolley || isPrepRoom || isBloodTrolley) && (
+              {(isProcedureTrolley || isPrepRoom || isBloodTrolley || isEquipmentModule) && (
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   {(isPrepRoom || isBloodTrolley) && (
                     <div
@@ -588,53 +822,132 @@ export function InventoryModuleView({
                     </div>
                   )}
 
-                  <div
-                    className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
-                    title="Choose printout layout"
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        isPrepRoom
-                          ? setPrepRoomPrintLayout('two-per-sheet')
-                          : isBloodTrolley
-                            ? setBloodTrolleyPrintLayout('two-per-sheet')
-                            : setTrolleyPrintLayout('two-per-sheet')
-                      }
-                      className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                        (isPrepRoom
-                          ? prepRoomPrintLayout
-                          : isBloodTrolley
-                            ? bloodTrolleyPrintLayout
-                            : trolleyPrintLayout) === 'two-per-sheet'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
+                  {isEquipmentModule ? (
+                    <>
+                      <div
+                        className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                        title="Choose which Medical Equipment report to print"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEquipmentPrintScope('all');
+                            setIncludeEquipmentMaintenanceLog(false);
+                          }}
+                          className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                            equipmentPrintScope === 'all' && !includeEquipmentMaintenanceLog
+                              ? 'bg-white text-slate-900 shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Inventory Only
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEquipmentPrintScope('all');
+                            setIncludeEquipmentMaintenanceLog(true);
+                          }}
+                          className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                            equipmentPrintScope === 'all' && includeEquipmentMaintenanceLog
+                              ? 'bg-white text-slate-900 shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Inventory + Repair Log
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEquipmentPrintScope('maintenance-only')}
+                          className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                            equipmentPrintScope === 'maintenance-only'
+                              ? 'bg-white text-amber-900 shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Repair Log Report ({equipmentMaintenanceLogs.length})
+                        </button>
+                      </div>
+
+                      {equipmentPrintScope !== 'maintenance-only' && (
+                        <div
+                          className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                          title="Choose Medical Equipment printout pagination"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setEquipmentPrintLayout('grouped')}
+                            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                              equipmentPrintLayout === 'grouped'
+                                ? 'bg-white text-slate-900 shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Grouped (Official)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEquipmentPrintLayout('one-per-sheet')}
+                            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                              equipmentPrintLayout === 'one-per-sheet'
+                                ? 'bg-white text-slate-900 shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            1 Table / Page
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div
+                      className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                      title="Choose printout layout"
                     >
-                      {isBloodTrolley ? '2 Tables / Page' : '2 Tables / Sheet'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        isPrepRoom
-                          ? setPrepRoomPrintLayout('one-per-sheet')
-                          : isBloodTrolley
-                            ? setBloodTrolleyPrintLayout('one-per-sheet')
-                            : setTrolleyPrintLayout('one-per-sheet')
-                      }
-                      className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                        (isPrepRoom
-                          ? prepRoomPrintLayout
-                          : isBloodTrolley
-                            ? bloodTrolleyPrintLayout
-                            : trolleyPrintLayout) === 'one-per-sheet'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {isBloodTrolley ? '1 Table / Page' : '1 Table / Sheet'}
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          isPrepRoom
+                            ? setPrepRoomPrintLayout('two-per-sheet')
+                            : isBloodTrolley
+                              ? setBloodTrolleyPrintLayout('two-per-sheet')
+                              : setTrolleyPrintLayout('two-per-sheet')
+                        }
+                        className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                          (isPrepRoom
+                            ? prepRoomPrintLayout
+                            : isBloodTrolley
+                              ? bloodTrolleyPrintLayout
+                              : trolleyPrintLayout) === 'two-per-sheet'
+                            ? 'bg-white text-slate-900 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {isBloodTrolley ? '2 Tables / Page' : '2 Tables / Sheet'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          isPrepRoom
+                            ? setPrepRoomPrintLayout('one-per-sheet')
+                            : isBloodTrolley
+                              ? setBloodTrolleyPrintLayout('one-per-sheet')
+                              : setTrolleyPrintLayout('one-per-sheet')
+                        }
+                        className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                          (isPrepRoom
+                            ? prepRoomPrintLayout
+                            : isBloodTrolley
+                              ? bloodTrolleyPrintLayout
+                              : trolleyPrintLayout) === 'one-per-sheet'
+                            ? 'bg-white text-slate-900 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {isBloodTrolley ? '1 Table / Page' : '1 Table / Sheet'}
+                      </button>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
                     <button
@@ -669,7 +982,11 @@ export function InventoryModuleView({
                     className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5" />
-                    Print Checklist (A4)
+                    {isEquipmentModule
+                      ? equipmentPrintScope === 'maintenance-only'
+                        ? 'Print Repair Report (A4)'
+                        : 'Print Inventory (A4)'
+                      : 'Print Checklist (A4)'}
                   </button>
                 </div>
               )}
@@ -730,6 +1047,34 @@ export function InventoryModuleView({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div
+                className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                title="Choose which Store items to print"
+              >
+                <button
+                  type="button"
+                  onClick={() => setStorePrintScope('all')}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    storePrintScope === 'all'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All Items
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStorePrintScope('near-expiry')}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    storePrintScope === 'near-expiry'
+                      ? 'bg-amber-50 text-amber-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Near Expiry ({storeNearExpiryCount})
+                </button>
+              </div>
+
               <div
                 className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
                 title="Choose Store printout layout"
@@ -897,119 +1242,130 @@ export function InventoryModuleView({
         )}
       </div>
 
-      {/* Assigned Staff Card for Store Items, Procedure Trolley, Prep Room & Blood Collection Trolley */}
-      {(isStore || isProcedureTrolley || isPrepRoom || isBloodTrolley) && viewMode === 'editor' && (
-        <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-teal-700" />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-900">
+      {/* Assigned Staff Card for Store, Procedure Trolley, Prep Room, Blood Trolley & Medical Equipment */}
+      {(isStore || isProcedureTrolley || isPrepRoom || isBloodTrolley || isEquipmentModule) &&
+        viewMode === 'editor' && (
+          <div className="no-print bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-teal-700" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {isProcedureTrolley
+                        ? 'Assigned Staff (Procedure Trolley Checklist)'
+                        : isPrepRoom
+                          ? 'Assigned Staff (Preparation Room Checklists)'
+                          : isBloodTrolley
+                            ? 'Assigned Staff (Blood Collection Trolley Checklist)'
+                            : isEquipmentModule
+                              ? 'Assigned Staff (Medical Equipment Monthly Inventory)'
+                              : 'Assigned Staff (Monthly Store Checklist)'}
+                    </h3>
+                    <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                      {sectionStaffAssignments.filter((s) => s.staffName.trim()).length} /{' '}
+                      {sectionStaffAssignments.length} Assigned
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {isProcedureTrolley
-                      ? 'Assigned Staff (Procedure Trolley Checklist)'
+                      ? 'Assign one or more ward staff members to check Procedure Trolley items. All assigned staff appear on the printed checklist sign-off block.'
                       : isPrepRoom
-                        ? 'Assigned Staff (Preparation Room Checklists)'
+                        ? 'Assign one or more ward staff members to check CCU and SD Preparation Room items. All assigned staff appear on the printed checklist sign-off block.'
                         : isBloodTrolley
-                          ? 'Assigned Staff (Blood Collection Trolley Checklist)'
-                          : 'Assigned Staff (Monthly Store Checklist)'}
-                  </h3>
-                  <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                    {sectionStaffAssignments.filter((s) => s.staffName.trim()).length} /{' '}
-                    {sectionStaffAssignments.length} Assigned
-                  </span>
+                          ? 'Assign one or more ward staff members to check Blood Collection Trolley drawers. All assigned staff appear on the printed checklist sign-off block.'
+                          : isEquipmentModule
+                            ? 'Assign one or more ward staff members to check Medical Equipment Tables (1–9). All assigned staff appear on the printed inventory sign-off block.'
+                            : 'Assign one or more ward staff members to check Store categories. All assigned staff appear on the printed GH/NUR/2025-19 sign-off block.'}
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {isProcedureTrolley
-                    ? 'Assign one or more ward staff members to check Procedure Trolley items. All assigned staff appear on the printed checklist sign-off block.'
-                    : isPrepRoom
-                      ? 'Assign one or more ward staff members to check CCU and SD Preparation Room items. All assigned staff appear on the printed checklist sign-off block.'
-                      : isBloodTrolley
-                        ? 'Assign one or more ward staff members to check Blood Collection Trolley drawers. All assigned staff appear on the printed checklist sign-off block.'
-                        : 'Assign one or more ward staff members to check Store categories. All assigned staff appear on the printed GH/NUR/2025-19 sign-off block.'}
-                </p>
               </div>
+
+              <button
+                type="button"
+                onClick={addSectionStaffRow}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Staff Member
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={addSectionStaffRow}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Staff Member
-            </button>
-          </div>
-
-          <div className="overflow-x-auto border border-slate-200 rounded-md">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-medium text-slate-600">
-                  <th className="py-2 px-2.5 w-10 text-center">#</th>
-                  <th className="py-2 px-2.5 min-w-[170px]">Staff Name</th>
-                  <th className="py-2 px-2.5 min-w-[140px]">Role</th>
-                  <th className="py-2 px-2.5 min-w-[210px]">
-                    {isProcedureTrolley
-                      ? 'Assigned Rows / Scope'
-                      : isPrepRoom
-                        ? 'Assigned Room / Scope'
-                        : isBloodTrolley
-                          ? 'Assigned Drawers / Scope'
-                          : 'Assigned Categories'}
-                  </th>
-                  <th className="py-2 px-2.5 w-32 text-center">Date Checked</th>
-                  <th className="py-2 px-2.5 w-36 text-center">Signature</th>
-                  <th className="py-2 px-2 w-10 text-center">
-                    <span className="sr-only">Remove</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {sectionStaffAssignments.map((st, idx) => (
-                  <tr key={st.id} className="hover:bg-slate-50/70">
-                    <td className="p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
-                    <td className="p-1.5">
-                      <input
-                        type="text"
-                        value={st.staffName}
-                        onChange={(e) => updateSectionStaffField(idx, 'staffName', e.target.value)}
-                        placeholder={`Staff ${idx + 1} full name`}
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <input
-                        type="text"
-                        value={st.role}
-                        onChange={(e) => updateSectionStaffField(idx, 'role', e.target.value)}
-                        placeholder={
-                          isProcedureTrolley || isBloodTrolley
-                            ? 'e.g., Staff Nurse / Trolley Lead'
-                            : isPrepRoom
-                              ? 'e.g., Staff Nurse / CCU or SD Lead'
-                              : 'e.g., Staff Nurse / Storekeeper'
-                        }
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <input
-                        type="text"
-                        value={st.assignedSections}
-                        onChange={(e) =>
-                          updateSectionStaffField(idx, 'assignedSections', e.target.value)
-                        }
-                        placeholder={
-                          isProcedureTrolley
-                            ? 'e.g., All Items (No. 1–42)'
-                            : isPrepRoom
-                              ? 'e.g., CCU Prep Room (No. 1–38) / SD Prep Room'
-                              : isBloodTrolley
-                                ? 'e.g., CCU / SD — All Drawers (1st – 4th Drawer)'
-                                : 'e.g., Surgical Disposable & Dressing'
-                        }
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
-                      />
+            <div className="overflow-x-auto border border-slate-200 rounded-md">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-medium text-slate-600">
+                    <th className="py-2 px-2.5 w-10 text-center">#</th>
+                    <th className="py-2 px-2.5 min-w-[170px]">Staff Name</th>
+                    <th className="py-2 px-2.5 min-w-[140px]">Role</th>
+                    <th className="py-2 px-2.5 min-w-[210px]">
+                      {isProcedureTrolley
+                        ? 'Assigned Rows / Scope'
+                        : isPrepRoom
+                          ? 'Assigned Room / Scope'
+                          : isBloodTrolley
+                            ? 'Assigned Drawers / Scope'
+                            : isEquipmentModule
+                              ? 'Assigned Tables / Scope'
+                              : 'Assigned Categories'}
+                    </th>
+                    <th className="py-2 px-2.5 w-32 text-center">Date Checked</th>
+                    <th className="py-2 px-2.5 w-36 text-center">Signature</th>
+                    <th className="py-2 px-2 w-10 text-center">
+                      <span className="sr-only">Remove</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {sectionStaffAssignments.map((st, idx) => (
+                    <tr key={st.id} className="hover:bg-slate-50/70">
+                      <td className="p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
+                      <td className="p-1.5">
+                        <input
+                          type="text"
+                          value={st.staffName}
+                          onChange={(e) => updateSectionStaffField(idx, 'staffName', e.target.value)}
+                          placeholder={`Staff ${idx + 1} full name`}
+                          className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <input
+                          type="text"
+                          value={st.role}
+                          onChange={(e) => updateSectionStaffField(idx, 'role', e.target.value)}
+                          placeholder={
+                            isProcedureTrolley || isBloodTrolley
+                              ? 'e.g., Staff Nurse / Trolley Lead'
+                              : isPrepRoom
+                                ? 'e.g., Staff Nurse / CCU or SD Lead'
+                                : isEquipmentModule
+                                  ? 'e.g., Staff Nurse / Equipment Lead'
+                                  : 'e.g., Staff Nurse / Storekeeper'
+                          }
+                          className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <input
+                          type="text"
+                          value={st.assignedSections}
+                          onChange={(e) =>
+                            updateSectionStaffField(idx, 'assignedSections', e.target.value)
+                          }
+                          placeholder={
+                            isProcedureTrolley
+                              ? 'e.g., All Items (No. 1–42)'
+                              : isPrepRoom
+                                ? 'e.g., CCU Prep Room (No. 1–38) / SD Prep Room'
+                                : isBloodTrolley
+                                  ? 'e.g., CCU / SD — All Drawers (1st – 4th Drawer)'
+                                  : isEquipmentModule
+                                    ? 'e.g., Tables 1–5 (Beds, Monitors, Central)'
+                                    : 'e.g., Surgical Disposable & Dressing'
+                          }
+                          className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700"
+                        />
                     </td>
                     <td className="p-1.5">
                       <input
@@ -1093,6 +1449,44 @@ export function InventoryModuleView({
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setStoreEditorNearExpiryOnly(false)}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                      !storeEditorNearExpiryOnly
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Show All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStoreEditorNearExpiryOnly(true)}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                      storeEditorNearExpiryOnly
+                        ? 'bg-white text-amber-800 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Near Expiry ({storeNearExpiryCount})
+                  </button>
+                </div>
+
+                {storeEditorNearExpiryOnly && (
+                  <select
+                    value={storeNearExpiryMonths}
+                    onChange={(e) => setStoreNearExpiryMonths(Number(e.target.value) as 1 | 3 | 6)}
+                    aria-label="Near expiry window"
+                    className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  >
+                    <option value={1}>Within 1 Month</option>
+                    <option value={3}>Within 3 Months</option>
+                    <option value={6}>Within 6 Months</option>
+                  </select>
+                )}
+
                 {storeSectionFilter === 'All' && groupedStoreSections.length > 1 && (
                   <div className="flex items-center gap-1.5">
                     <button
@@ -1376,6 +1770,448 @@ export function InventoryModuleView({
             })
           )}
         </div>
+      ) : isEquipmentModule ? (
+        <div
+          className={`no-print space-y-4 ${viewMode === 'print-preview' ? 'hidden' : ''}`}
+        >
+          {/* Categorized Medical Equipment Tables Filter Bar */}
+          <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setEquipmentTableFilter('All')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                  equipmentTableFilter === 'All'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All Tables ({equipmentUnitTotal})
+              </button>
+              {equipmentTablesSummary.map((tbl) => (
+                <button
+                  key={tbl.name}
+                  type="button"
+                  onClick={() => setEquipmentTableFilter(tbl.name)}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    equipmentTableFilter === tbl.name
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tbl.name} ({tbl.count})
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {category.supportsUnitSplit && (
+                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                    {(['All', 'CCU', 'SD', 'General Ward'] as const).map((unit) => (
+                      <button
+                        key={unit}
+                        type="button"
+                        onClick={() => setUnitFilter(unit)}
+                        className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                          unitFilter === unit
+                            ? 'bg-white text-slate-900 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {unit === 'All' ? 'All Units' : unit}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                      statusFilter === 'all'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Show All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('attention')}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                      statusFilter === 'attention'
+                        ? 'bg-white text-rose-700 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Alerts Only
+                  </button>
+                </div>
+
+                {equipmentTableFilter === 'All' && groupedEquipmentTables.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAllEquipmentTablesCollapsed(false)}
+                      className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                    >
+                      Expand All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllEquipmentTablesCollapsed(true)}
+                      className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                    >
+                      Collapse All
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search device, MOH no., bed or note..."
+                    className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openAdd()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Equipment
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 10 Organized Equipment Table Cards */}
+          {groupedEquipmentTables.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
+              <h3 className="text-sm font-semibold text-slate-900">
+                No equipment matches current filter
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Add equipment to this table or clear your unit, table, or search filters.
+              </p>
+              <button
+                type="button"
+                onClick={() => openAdd()}
+                className="mt-4 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors cursor-pointer"
+              >
+                Add Equipment
+              </button>
+            </div>
+          ) : (
+            groupedEquipmentTables.map((tableGroup) => {
+              const isCollapsed =
+                equipmentTableFilter === 'All' &&
+                !search.trim() &&
+                Boolean(collapsedEquipmentTables[tableGroup.name]);
+              const extraCols = getEquipmentTableExtraCols(tableGroup.name);
+              const isCrashCartTable = tableGroup.name === 'Table 4 – Crash Cart Trolleys';
+
+              return (
+                <div
+                  key={tableGroup.name}
+                  className="bg-white border border-slate-200 rounded-lg overflow-hidden"
+                >
+                  <div className="px-4 py-2.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleEquipmentTable(tableGroup.name)}
+                      className="flex items-center gap-2 text-left cursor-pointer"
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" />
+                      )}
+                      <h3 className="text-sm font-semibold tracking-wide">{tableGroup.name}</h3>
+                      <span className="font-mono text-xs text-slate-300 tabular-nums">
+                        ({tableGroup.items.length})
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openAdd(tableGroup.name)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-100 bg-teal-800/80 hover:bg-teal-700 rounded transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add to Table
+                    </button>
+                  </div>
+
+                  {!isCollapsed && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-medium text-slate-500">
+                            <th className="py-2.5 px-3 w-16 text-center">No./Bed</th>
+                            <th className="py-2.5 px-3 min-w-[180px]">
+                              {isCrashCartTable
+                                ? 'Defibrillator (Brand + MOH)'
+                                : 'Device / Description'}
+                            </th>
+                            <th className="py-2.5 px-3 min-w-[115px]">
+                              {isCrashCartTable ? 'Trolley MOH No.' : 'MOH Number'}
+                            </th>
+                            {extraCols.map((col) => (
+                              <th
+                                key={col.key}
+                                className={`py-2.5 px-2 ${
+                                  isTickableEquipmentTable(tableGroup.name)
+                                    ? 'text-center min-w-[78px]'
+                                    : 'min-w-[95px]'
+                                }`}
+                              >
+                                {col.shortLabel}
+                              </th>
+                            ))}
+                            <th className="py-2.5 px-3 min-w-[155px]">Status &amp; PPM</th>
+                            <th className="py-2.5 px-3 min-w-[150px]">Comments</th>
+                            <th className="py-2.5 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 text-xs">
+                          {tableGroup.items.map((item, idx) => {
+                            const pmDays = item.nextPmDate
+                              ? daysBetween(today, item.nextPmDate)
+                              : null;
+                            const rowCode = item.otherCode?.trim() || String(idx + 1);
+                            const ex = item.extraColumns || {};
+                            const isTable5 =
+                              tableGroup.name === 'Table 5 – Suction and Oxygenation Items';
+                            const isStoreRow = isTable5 && rowCode === 'Store';
+                            const isTotalRow = isTable5 && rowCode === 'Total';
+                            const isTickRow =
+                              isTickableEquipmentTable(tableGroup.name) &&
+                              !isStoreRow &&
+                              !isTotalRow;
+
+                            return (
+                              <tr
+                                key={item.id}
+                                className={`${
+                                  isTotalRow
+                                    ? 'bg-slate-50/90 font-semibold'
+                                    : 'hover:bg-slate-50/80'
+                                } transition-colors`}
+                              >
+                                <td className="py-2 px-3 text-center font-mono font-semibold text-slate-700">
+                                  {rowCode}
+                                </td>
+
+                                <td className="py-2 px-3">
+                                  <div className="font-medium text-slate-900">
+                                    {isCrashCartTable ? ex.defibrillator || item.name : item.name}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-0.5">
+                                    {item.unit}
+                                  </div>
+                                </td>
+
+                                <td className="py-2 px-3 font-mono text-slate-800 whitespace-pre-line tabular-nums">
+                                  {item.batchOrSerial}
+                                </td>
+
+                                {extraCols.map((col) => (
+                                  <td
+                                    key={col.key}
+                                    className={`py-1.5 px-2 ${
+                                      isTickableEquipmentTable(tableGroup.name) ? 'text-center' : ''
+                                    }`}
+                                  >
+                                    {isTickRow ? (
+                                      <label className="inline-flex items-center justify-center p-1 rounded hover:bg-slate-100 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={isEquipmentAccessoryTicked(ex[col.key])}
+                                          aria-label={`${col.label} for ${rowCode}`}
+                                          onChange={(e) =>
+                                            onUpdateItem(item.id, {
+                                              extraColumns: {
+                                                ...(item.extraColumns || {}),
+                                                [col.key]: e.target.checked ? '✓' : '',
+                                              },
+                                            })
+                                          }
+                                          className="w-4 h-4 rounded border-slate-300 text-teal-700 accent-teal-700 cursor-pointer"
+                                        />
+                                      </label>
+                                    ) : isStoreRow ? (
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={ex[col.key] || ''}
+                                        aria-label={`Store count for ${col.label}`}
+                                        onChange={(e) =>
+                                          onUpdateItem(item.id, {
+                                            extraColumns: {
+                                              ...(item.extraColumns || {}),
+                                              [col.key]: e.target.value,
+                                            },
+                                          })
+                                        }
+                                        placeholder="0"
+                                        className="w-20 mx-auto px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700 bg-white text-center font-mono font-semibold tabular-nums"
+                                      />
+                                    ) : isTotalRow ? (
+                                      <div
+                                        title={`Auto-count across beds + Store for ${col.label}`}
+                                        className="w-20 mx-auto px-2 py-1 text-xs border border-slate-200 rounded bg-slate-100 text-slate-900 text-center font-mono font-bold tabular-nums select-none"
+                                      >
+                                        {table5ColumnTotals[col.key] ?? 0}
+                                      </div>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        value={ex[col.key] || ''}
+                                        onChange={(e) =>
+                                          onUpdateItem(item.id, {
+                                            extraColumns: {
+                                              ...(item.extraColumns || {}),
+                                              [col.key]: e.target.value,
+                                            },
+                                          })
+                                        }
+                                        placeholder="—"
+                                        className="w-full min-w-[70px] px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700 bg-white"
+                                      />
+                                    )}
+                                  </td>
+                                ))}
+
+                                <td className="py-2 px-3 whitespace-nowrap">
+                                  <select
+                                    value={item.equipmentStatus || 'Operational'}
+                                    onChange={(e) =>
+                                      onUpdateItem(item.id, {
+                                        equipmentStatus: e.target.value as EquipmentStatus,
+                                      })
+                                    }
+                                    className={`px-2 py-1 text-[11px] font-medium border rounded focus:outline-none focus:ring-1 focus:ring-teal-700 ${
+                                      item.equipmentStatus === 'Out of Service' ||
+                                      item.equipmentStatus === 'Under Maintenance'
+                                        ? 'border-rose-300 bg-rose-50 text-rose-800'
+                                        : item.equipmentStatus === 'Needs Calibration'
+                                          ? 'border-amber-300 bg-amber-50 text-amber-800'
+                                          : 'border-slate-200 bg-white text-emerald-800'
+                                    }`}
+                                  >
+                                    <option value="Operational">Operational</option>
+                                    <option value="Needs Calibration">Needs Calibration</option>
+                                    <option value="Under Maintenance">Under Maintenance</option>
+                                    <option value="Out of Service">Out of Service</option>
+                                  </select>
+                                  {pmDays !== null && (
+                                    <div
+                                      className={`mt-0.5 text-[10px] font-mono tabular-nums ${
+                                        pmDays < 0
+                                          ? 'text-rose-700 font-semibold'
+                                          : pmDays <= 14
+                                            ? 'text-amber-700 font-semibold'
+                                            : 'text-slate-400'
+                                      }`}
+                                    >
+                                      PPM: {formatShortDate(item.nextPmDate || null)}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-1.5 px-3">
+                                  <input
+                                    type="text"
+                                    value={item.notes}
+                                    onChange={(e) =>
+                                      onUpdateItem(item.id, { notes: e.target.value })
+                                    }
+                                    placeholder="Add comment..."
+                                    className="w-full min-w-[130px] px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-700 bg-white"
+                                  />
+                                </td>
+
+                                <td className="py-2 px-4 whitespace-nowrap text-right">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    {!isStoreRow && !isTotalRow && onAddEquipmentMaintenanceLog && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreselectedItemForRepair(item)}
+                                        title="Log Maintenance / Repair Follow-Up"
+                                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded transition-colors cursor-pointer"
+                                      >
+                                        <Wrench className="w-3 h-3" />
+                                        Repair
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => onVerifyItem(item.id, defaultInspector)}
+                                      className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 rounded transition-colors cursor-pointer"
+                                    >
+                                      Verify
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEdit(item)}
+                                      title="Edit equipment"
+                                      className="p-1.5 text-slate-400 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => onDeleteItem(item.id)}
+                                      title="Delete equipment"
+                                      className="p-1.5 text-slate-400 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+
+          {/* Medical Equipment Maintenance, Repair Log & Follow-Up */}
+          {onAddEquipmentMaintenanceLog &&
+            onUpdateEquipmentMaintenanceLog &&
+            onDeleteEquipmentMaintenanceLog && (
+              <EquipmentMaintenanceLogSection
+                logs={equipmentMaintenanceLogs}
+                equipmentItems={categoryItems}
+                defaultInspector={defaultInspector}
+                preselectedItemForNewLog={preselectedItemForRepair}
+                onClearPreselectedItem={() => setPreselectedItemForRepair(null)}
+                onAddLog={onAddEquipmentMaintenanceLog}
+                onUpdateLog={onUpdateEquipmentMaintenanceLog}
+                onDeleteLog={onDeleteEquipmentMaintenanceLog}
+                onPrintReport={(filter) => {
+                  setEquipmentPrintScope('maintenance-only');
+                  setEquipmentMaintenancePrintFilter(filter);
+                  setViewMode('print-preview');
+                }}
+              />
+            )}
+        </div>
       ) : (
         <div
           className={`no-print bg-white border border-slate-200 rounded-lg ${
@@ -1517,7 +2353,7 @@ export function InventoryModuleView({
                     </th>
                     <th className="py-2.5 px-3">
                       {category.isEquipment
-                        ? 'Next PM Due'
+                        ? 'Next PPM Due'
                         : isProcedureTrolley
                           ? 'Expiry Date 1'
                           : 'Expiry Date & State'}
@@ -1628,8 +2464,8 @@ export function InventoryModuleView({
                                 }`}
                               >
                                 {pmDays < 0
-                                  ? `PM Overdue ${Math.abs(pmDays)}d`
-                                  : `PM in ${pmDays}d`}
+                                  ? `PPM Overdue ${Math.abs(pmDays)}d`
+                                  : `PPM in ${pmDays}d`}
                               </div>
                             )}
                           </div>
@@ -1829,27 +2665,64 @@ export function InventoryModuleView({
         >
           <div className="no-print mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-xs text-slate-600">
             <div>
-              Showing printable <span className="font-semibold text-slate-800">Monthly Store checklist (GH/NUR/2025-19)</span> —{' '}
+              Showing printable{' '}
+              <span className="font-semibold text-slate-800">
+                {storePrintScope === 'near-expiry'
+                  ? `Near Expiry Store Items (≤ ${storeNearExpiryMonths} ${
+                      storeNearExpiryMonths === 1 ? 'Month' : 'Months'
+                    })`
+                  : 'Monthly Store checklist (GH/NUR/2025-19)'}
+              </span>{' '}
+              —{' '}
               <span className="font-mono font-semibold text-slate-900">
                 {printableStoreItems.length}
               </span>{' '}
               items
-              {storeSectionFilter !== 'All' ? ` (${storeSectionFilter})` : ' across all 8 sections'}
+              {storeSectionFilter !== 'All' ? ` (${storeSectionFilter})` : ' across sections'}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium text-slate-500">Section to Print:</span>
-              <select
-                value={storeSectionFilter}
-                onChange={(e) => setStoreSectionFilter(e.target.value)}
-                className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-              >
-                <option value="All">All Sections ({categoryItems.length})</option>
-                {storeSections.map((sec) => (
-                  <option key={sec.name} value={sec.name}>
-                    {sec.name} ({sec.count})
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-slate-500">Print Scope:</span>
+                <select
+                  value={storePrintScope}
+                  onChange={(e) => setStorePrintScope(e.target.value as StorePrintScope)}
+                  className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                >
+                  <option value="all">All Store Items</option>
+                  <option value="near-expiry">
+                    Near Expiry &amp; Expired Only ({storeNearExpiryCount})
                   </option>
-                ))}
-              </select>
+                </select>
+              </div>
+              {storePrintScope === 'near-expiry' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-500">Window:</span>
+                  <select
+                    value={storeNearExpiryMonths}
+                    onChange={(e) => setStoreNearExpiryMonths(Number(e.target.value) as 1 | 3 | 6)}
+                    className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  >
+                    <option value={1}>≤ 1 Month</option>
+                    <option value={3}>≤ 3 Months</option>
+                    <option value={6}>≤ 6 Months</option>
+                  </select>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-slate-500">Section to Print:</span>
+                <select
+                  value={storeSectionFilter}
+                  onChange={(e) => setStoreSectionFilter(e.target.value)}
+                  className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                >
+                  <option value="All">All Sections ({categoryItems.length})</option>
+                  {storeSections.map((sec) => (
+                    <option key={sec.name} value={sec.name}>
+                      {sec.name} ({sec.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           <StoreChecklistPrintView
@@ -1858,6 +2731,149 @@ export function InventoryModuleView({
             wardName={wardName}
             defaultInspector={defaultInspector}
             layoutMode={storePrintLayout}
+            printScope={storePrintScope}
+            nearExpiryMonths={storeNearExpiryMonths}
+          />
+        </div>
+      )}
+
+      {/* Official Medical Equipment Monthly Inventory Printable Form */}
+      {isEquipmentModule && (
+        <div
+          className={
+            viewMode === 'print-preview'
+              ? 'block overflow-x-auto pb-4'
+              : 'hidden print-only-block'
+          }
+        >
+          <div className="no-print mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-xs text-slate-600">
+            <div>
+              Showing printable{' '}
+              <span className="font-semibold text-slate-800">
+                {equipmentPrintScope === 'maintenance-only'
+                  ? 'Medical Equipment Maintenance, Repair Log & Follow-Up Report'
+                  : 'Medical Equipment Monthly Inventory'}
+              </span>{' '}
+              —{' '}
+              <span className="font-mono font-semibold text-slate-900">
+                {equipmentPrintScope === 'maintenance-only'
+                  ? equipmentMaintenanceLogs.filter((entry) => {
+                      if (equipmentMaintenancePrintFilter === 'active')
+                        return entry.status !== 'Repaired / Returned';
+                      if (equipmentMaintenancePrintFilter === 'repaired')
+                        return entry.status === 'Repaired / Returned';
+                      return true;
+                    }).length
+                  : equipmentTableFilter === 'All'
+                    ? categoryItems.length
+                    : categoryItems.filter((it) => it.locationDetail === equipmentTableFilter)
+                        .length}
+              </span>{' '}
+              {equipmentPrintScope === 'maintenance-only' ? 'repair entries' : 'items'}
+              {equipmentPrintScope !== 'maintenance-only' &&
+                (equipmentTableFilter !== 'All'
+                  ? ` (${equipmentTableFilter})`
+                  : ` across all ${EQUIPMENT_TABLES.length} tables`)}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-slate-500">Print Report:</span>
+                <select
+                  value={
+                    equipmentPrintScope === 'maintenance-only'
+                      ? 'maintenance-only'
+                      : includeEquipmentMaintenanceLog
+                        ? 'all-with-log'
+                        : 'inventory-only'
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'maintenance-only') {
+                      setEquipmentPrintScope('maintenance-only');
+                    } else if (val === 'all-with-log') {
+                      setEquipmentPrintScope('all');
+                      setIncludeEquipmentMaintenanceLog(true);
+                    } else {
+                      setEquipmentPrintScope('all');
+                      setIncludeEquipmentMaintenanceLog(false);
+                    }
+                  }}
+                  className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                >
+                  <option value="all-with-log">Full Inventory + Repair Log</option>
+                  <option value="inventory-only">Inventory Tables Only</option>
+                  <option value="maintenance-only">
+                    Maintenance, Repair Log &amp; Follow-Up Report ({equipmentMaintenanceLogs.length})
+                  </option>
+                </select>
+              </div>
+              {(equipmentPrintScope === 'maintenance-only' ||
+                (equipmentPrintScope === 'all' &&
+                  includeEquipmentMaintenanceLog &&
+                  equipmentTableFilter === 'All')) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-500">Repair Log Filter:</span>
+                  <select
+                    value={equipmentMaintenancePrintFilter}
+                    onChange={(e) =>
+                      setEquipmentMaintenancePrintFilter(
+                        e.target.value as EquipmentMaintenancePrintFilter
+                      )
+                    }
+                    className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  >
+                    <option value="all">
+                      All Entries ({equipmentMaintenanceLogs.length})
+                    </option>
+                    <option value="active">
+                      Active Follow-Up Only (
+                      {
+                        equipmentMaintenanceLogs.filter((l) => l.status !== 'Repaired / Returned')
+                          .length
+                      }
+                      )
+                    </option>
+                    <option value="repaired">
+                      Repaired / Closed Only (
+                      {
+                        equipmentMaintenanceLogs.filter((l) => l.status === 'Repaired / Returned')
+                          .length
+                      }
+                      )
+                    </option>
+                  </select>
+                </div>
+              )}
+              {equipmentPrintScope === 'all' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-500">Table to Print:</span>
+                  <select
+                    value={equipmentTableFilter}
+                    onChange={(e) => setEquipmentTableFilter(e.target.value)}
+                    className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  >
+                    <option value="All">All Tables ({categoryItems.length})</option>
+                    {EQUIPMENT_TABLES.map((tbl) => (
+                      <option key={tbl} value={tbl}>
+                        {tbl} ({categoryItems.filter((it) => it.locationDetail === tbl).length})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+          <EquipmentPrintView
+            items={categoryItems}
+            meta={sectionMeta}
+            wardName={wardName}
+            defaultInspector={defaultInspector}
+            layoutMode={equipmentPrintLayout}
+            selectedTable={equipmentTableFilter}
+            maintenanceLogs={equipmentMaintenanceLogs}
+            includeMaintenanceLog={includeEquipmentMaintenanceLog}
+            printScope={equipmentPrintScope}
+            maintenancePrintFilter={equipmentMaintenancePrintFilter}
           />
         </div>
       )}
@@ -1889,7 +2905,54 @@ export function InventoryModuleView({
                 />
               </div>
 
-              {category.supportsUnitSplit ? (
+              {isEquipmentModule ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Ward Unit
+                    </label>
+                    <select
+                      value={formUnit}
+                      onChange={(e) =>
+                        setFormUnit(e.target.value as 'CCU' | 'SD' | 'General Ward')
+                      }
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    >
+                      <option value="CCU">CCU</option>
+                      <option value="SD">SD</option>
+                      <option value="General Ward">General Ward</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Equipment Table
+                    </label>
+                    <select
+                      value={formLocation}
+                      onChange={(e) => setFormLocation(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    >
+                      {EQUIPMENT_TABLES.map((tbl) => (
+                        <option key={tbl} value={tbl}>
+                          {tbl}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Row No. / Bed / Count
+                    </label>
+                    <input
+                      type="text"
+                      value={formOtherCode}
+                      onChange={(e) => setFormOtherCode(e.target.value)}
+                      placeholder="e.g., 1, Bed 11, A, or 10"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    />
+                  </div>
+                </div>
+              ) : category.supportsUnitSplit ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-slate-700 mb-1">Ward Unit</label>
@@ -1981,43 +3044,169 @@ export function InventoryModuleView({
               )}
 
               {category.isEquipment ? (
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Serial / Asset ID
-                    </label>
-                    <input
-                      type="text"
-                      value={formBatch}
-                      onChange={(e) => setFormBatch(e.target.value)}
-                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                    />
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        {isEquipmentModule ? 'MOH Number' : 'Serial / Asset ID'}
+                      </label>
+                      <input
+                        type="text"
+                        value={formBatch}
+                        onChange={(e) => setFormBatch(e.target.value)}
+                        placeholder={isEquipmentModule ? 'e.g., 75041 or NIL' : ''}
+                        className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
+                      <select
+                        value={formEqStatus}
+                        onChange={(e) => setFormEqStatus(e.target.value as EquipmentStatus)}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                      >
+                        <option value="Operational">Operational</option>
+                        <option value="Needs Calibration">Needs Calibration</option>
+                        <option value="Under Maintenance">Under Maintenance</option>
+                        <option value="Out of Service">Out of Service</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        Next PPM Date
+                      </label>
+                      <input
+                        type="date"
+                        value={formNextPm}
+                        onChange={(e) => setFormNextPm(e.target.value)}
+                        className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
-                    <select
-                      value={formEqStatus}
-                      onChange={(e) => setFormEqStatus(e.target.value as EquipmentStatus)}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                    >
-                      <option value="Operational">Operational</option>
-                      <option value="Needs Calibration">Needs Calibration</option>
-                      <option value="Under Maintenance">Under Maintenance</option>
-                      <option value="Out of Service">Out of Service</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Next PM Date
-                    </label>
-                    <input
-                      type="date"
-                      value={formNextPm}
-                      onChange={(e) => setFormNextPm(e.target.value)}
-                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                    />
-                  </div>
-                </div>
+
+                  {isEquipmentModule &&
+                    (getEquipmentTableExtraCols(formLocation).length > 0 ||
+                      formLocation === 'Table 4 – Crash Cart Trolleys') && (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2.5">
+                        <div className="text-[11px] font-semibold text-slate-700">
+                          Table-Specific Accessories &amp; Columns
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                          {formLocation === 'Table 4 – Crash Cart Trolleys' && (
+                            <div className="col-span-2 sm:col-span-3">
+                              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                Defibrillator (Brand + MOH Number)
+                              </label>
+                              <input
+                                type="text"
+                                value={formExtraCols.defibrillator ?? formName}
+                                onChange={(e) =>
+                                  setFormExtraCols((prev) => ({
+                                    ...prev,
+                                    defibrillator: e.target.value,
+                                  }))
+                                }
+                                placeholder="e.g., Life Pak 003978"
+                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-teal-700"
+                              />
+                            </div>
+                          )}
+                          {getEquipmentTableExtraCols(formLocation).map((col) => {
+                            const isTable5Modal =
+                              formLocation === 'Table 5 – Suction and Oxygenation Items';
+                            const isStoreModalRow =
+                              isTable5Modal && formOtherCode.trim() === 'Store';
+                            const isTotalModalRow =
+                              isTable5Modal && formOtherCode.trim() === 'Total';
+                            const isModalTickable =
+                              isTickableEquipmentTable(formLocation) &&
+                              !isStoreModalRow &&
+                              !isTotalModalRow;
+
+                            if (isModalTickable) {
+                              return (
+                                <label
+                                  key={col.key}
+                                  className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded cursor-pointer hover:bg-slate-50"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isEquipmentAccessoryTicked(formExtraCols[col.key])}
+                                    onChange={(e) =>
+                                      setFormExtraCols((prev) => ({
+                                        ...prev,
+                                        [col.key]: e.target.checked ? '✓' : '',
+                                      }))
+                                    }
+                                    className="w-4 h-4 rounded border-slate-300 text-teal-700 accent-teal-700 cursor-pointer"
+                                  />
+                                  <span>{col.label}</span>
+                                </label>
+                              );
+                            }
+
+                            if (isStoreModalRow) {
+                              return (
+                                <div key={col.key}>
+                                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                    {col.label} (Store Qty)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={formExtraCols[col.key] || ''}
+                                    onChange={(e) =>
+                                      setFormExtraCols((prev) => ({
+                                        ...prev,
+                                        [col.key]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="0"
+                                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-teal-700"
+                                  />
+                                </div>
+                              );
+                            }
+
+                            if (isTotalModalRow) {
+                              return (
+                                <div key={col.key}>
+                                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                    {col.label} (Auto Total)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    readOnly
+                                    value={table5ColumnTotals[col.key] ?? 0}
+                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-semibold border border-slate-200 rounded bg-slate-100 text-slate-700"
+                                  />
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={col.key}>
+                                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                  {col.label}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={formExtraCols[col.key] || ''}
+                                  onChange={(e) =>
+                                    setFormExtraCols((prev) => ({
+                                      ...prev,
+                                      [col.key]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-teal-700"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                </>
               ) : (
                 <>
                   <div className="grid grid-cols-3 gap-3">

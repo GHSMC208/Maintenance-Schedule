@@ -5,8 +5,13 @@ import {
 } from '../data/bloodTrolleySeed';
 import { createInitialCrashCarts } from '../data/crashCartSeed';
 import {
+  createInitialEquipmentItems,
+  createInitialEquipmentMaintenanceLogs,
+} from '../data/equipmentSeed';
+import {
   createDefaultSectionPeriodMeta,
   createInitialBloodTrolleyStaff,
+  createInitialEquipmentStaff,
   createInitialPrepRoomStaff,
   createInitialProcedureTrolleyStaff,
   createInitialSectionMeta,
@@ -34,6 +39,12 @@ import {
   createInitialCylinderSchedule,
   createInitialOfficialCylinders,
 } from '../data/oxygenCylinderSeed';
+import {
+  createInitialEnvironmentalRoundMeta,
+  createInitialEnvironmentalStaff,
+  migrateLegacyEnvironmentalChecks,
+  responseToResult,
+} from '../data/environmentalRoundSeed';
 import type {
   CadChecklistForm,
   CategoryMeta,
@@ -42,6 +53,10 @@ import type {
   CylinderWeekRowRecord,
   CylinderWeekStaffMember,
   EnvironmentalCheckItem,
+  EnvironmentalResponse,
+  EnvironmentalRoundMeta,
+  EquipmentMaintenanceLogEntry,
+  EquipmentStatus,
   InventoryItem,
   IvMedsAuditMeta,
   MaintenanceTicket,
@@ -173,6 +188,22 @@ function migrateLegacyBloodTrolleyInventory(
   }
 
   return inventory;
+}
+
+function migrateLegacyEquipmentInventory(
+  inventory: InventoryItem[],
+  today: string
+): InventoryItem[] {
+  const eqItems = inventory.filter((it) => it.categoryId === 'equipment');
+  const isLegacySix =
+    eqItems.length === 6 &&
+    eqItems.every((it) => ['eq-01', 'eq-02', 'eq-03', 'eq-04', 'eq-05', 'eq-06'].includes(it.id)) &&
+    eqItems.some((it) => it.name.includes('Philips IntelliVue MX550'));
+
+  if (!isLegacySix) return inventory;
+
+  const nonEq = inventory.filter((it) => it.categoryId !== 'equipment');
+  return [...nonEq, ...createInitialEquipmentItems(today)];
 }
 
 function migrateLegacyOxygenCylinders(
@@ -360,6 +391,28 @@ function hydrateSectionMeta(
         } else {
           staffAssignments = createInitialBloodTrolleyStaff(today);
         }
+      } else if (key === 'equipment') {
+        if (Array.isArray(val.staffAssignments) && val.staffAssignments.length > 0) {
+          staffAssignments = [...val.staffAssignments];
+        } else if (val.staffName || val.signature || val.date) {
+          const fallback = createInitialEquipmentStaff(today)[0];
+          staffAssignments = [
+            {
+              ...fallback,
+              staffName: val.staffName ?? fallback.staffName,
+              signature: val.signature ?? '',
+              checkedDate: val.date ?? fallback.checkedDate,
+            },
+          ];
+        } else {
+          staffAssignments = createInitialEquipmentStaff(today);
+        }
+      } else if (key === 'environmental') {
+        if (Array.isArray(val.staffAssignments) && val.staffAssignments.length > 0) {
+          staffAssignments = [...val.staffAssignments];
+        } else {
+          staffAssignments = createInitialEnvironmentalStaff(today);
+        }
       }
       merged[key] = {
         wardNumber:
@@ -382,6 +435,30 @@ function hydrateSectionMeta(
     }
   }
   return merged;
+}
+
+function hydrateEnvironmentalRoundMeta(
+  raw: EnvironmentalRoundMeta | undefined,
+  today: string
+): EnvironmentalRoundMeta {
+  const base = createInitialEnvironmentalRoundMeta(today);
+  if (!raw || typeof raw !== 'object') return base;
+  return {
+    departmentInspected: raw.departmentInspected ?? base.departmentInspected,
+    inspectionDateMonth: raw.inspectionDateMonth ?? base.inspectionDateMonth,
+    managerHead: raw.managerHead ?? base.managerHead,
+    groupComments: {
+      ...base.groupComments,
+      ...(raw.groupComments && typeof raw.groupComments === 'object' ? raw.groupComments : {}),
+    },
+    followUpTableHeader: raw.followUpTableHeader ?? base.followUpTableHeader,
+    followUpRows: Array.isArray(raw.followUpRows) ? raw.followUpRows : base.followUpRows,
+    followUpFooterNote: raw.followUpFooterNote ?? base.followUpFooterNote,
+    staffAssignments:
+      Array.isArray(raw.staffAssignments) && raw.staffAssignments.length > 0
+        ? raw.staffAssignments
+        : base.staffAssignments,
+  };
 }
 
 function loadInitialStore(): WardStoreData {
@@ -417,17 +494,20 @@ function loadInitialStore(): WardStoreData {
           : initial.pharmacyForms;
         const today = getTodayIso();
         const hydratedForms = syncNearExpiryInPharmacyForms(rawPharmacyForms, hydratedCrashCarts);
-        const migratedInventory = migrateLegacyBloodTrolleyInventory(
-          migrateLegacyPrepRoomInventory(
-            migrateLegacyProcedureTrolleyInventory(
-              migrateLegacyIvMedsInventory(
-                migrateLegacyStoreInventory(
-                  migrateLegacyTransferBagInventory(parsed.inventory),
-                  today
+        const migratedInventory = migrateLegacyEquipmentInventory(
+          migrateLegacyBloodTrolleyInventory(
+            migrateLegacyPrepRoomInventory(
+              migrateLegacyProcedureTrolleyInventory(
+                migrateLegacyIvMedsInventory(
+                  migrateLegacyStoreInventory(
+                    migrateLegacyTransferBagInventory(parsed.inventory),
+                    today
+                  ),
+                  hydratedForms,
+                  today,
+                  parsed.defaultInspector || initial.defaultInspector
                 ),
-                hydratedForms,
-                today,
-                parsed.defaultInspector || initial.defaultInspector
+                today
               ),
               today
             ),
@@ -439,6 +519,14 @@ function loadInitialStore(): WardStoreData {
           ...initial,
           ...parsed,
           inventory: migratedInventory,
+          environmentalChecks: migrateLegacyEnvironmentalChecks(parsed.environmentalChecks, today),
+          environmentalRoundMeta: hydrateEnvironmentalRoundMeta(
+            parsed.environmentalRoundMeta,
+            today
+          ),
+          equipmentMaintenanceLogs: Array.isArray(parsed.equipmentMaintenanceLogs)
+            ? parsed.equipmentMaintenanceLogs
+            : createInitialEquipmentMaintenanceLogs(today),
           oxygenCylinders: migrateLegacyOxygenCylinders(parsed.oxygenCylinders, today),
           cylinderSchedule: hydrateCylinderSchedule(parsed.cylinderSchedule, today),
           crashCarts: hydratedCrashCarts,
@@ -604,6 +692,61 @@ export function useWardStore() {
     }));
   };
 
+  // --- Medical Equipment Maintenance & Repair Log ---
+  const addEquipmentMaintenanceLog = (
+    entry: Omit<EquipmentMaintenanceLogEntry, 'id'>,
+    syncEquipmentStatus?: EquipmentStatus
+  ) => {
+    const newEntry: EquipmentMaintenanceLogEntry = {
+      ...entry,
+      id: `eqm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    };
+    setData((prev) => ({
+      ...prev,
+      equipmentMaintenanceLogs: [newEntry, ...(prev.equipmentMaintenanceLogs || [])],
+      inventory:
+        syncEquipmentStatus && entry.equipmentItemId
+          ? prev.inventory.map((it) =>
+              it.id === entry.equipmentItemId
+                ? { ...it, equipmentStatus: syncEquipmentStatus }
+                : it
+            )
+          : prev.inventory,
+    }));
+  };
+
+  const updateEquipmentMaintenanceLog = (
+    entryId: string,
+    patch: Partial<EquipmentMaintenanceLogEntry>,
+    syncEquipmentStatus?: EquipmentStatus
+  ) => {
+    setData((prev) => {
+      const existing = (prev.equipmentMaintenanceLogs || []).find((e) => e.id === entryId);
+      const targetItemId = patch.equipmentItemId ?? existing?.equipmentItemId;
+      return {
+        ...prev,
+        equipmentMaintenanceLogs: (prev.equipmentMaintenanceLogs || []).map((e) =>
+          e.id === entryId ? { ...e, ...patch } : e
+        ),
+        inventory:
+          syncEquipmentStatus && targetItemId
+            ? prev.inventory.map((it) =>
+                it.id === targetItemId ? { ...it, equipmentStatus: syncEquipmentStatus } : it
+              )
+            : prev.inventory,
+      };
+    });
+  };
+
+  const deleteEquipmentMaintenanceLog = (entryId: string) => {
+    setData((prev) => ({
+      ...prev,
+      equipmentMaintenanceLogs: (prev.equipmentMaintenanceLogs || []).filter(
+        (e) => e.id !== entryId
+      ),
+    }));
+  };
+
   // --- Environmental Round Checklist ---
   const updateEnvironmentalCheck = (
     checkId: string,
@@ -673,6 +816,74 @@ export function useWardStore() {
       ...prev,
       environmentalChecks: [...prev.environmentalChecks, newCheck],
     }));
+  };
+
+  const setEnvironmentalResponse = (
+    checkId: string,
+    response: EnvironmentalResponse,
+    inspector?: string,
+    notes?: string
+  ) => {
+    const today = getTodayIso();
+    setData((prev) => ({
+      ...prev,
+      environmentalChecks: prev.environmentalChecks.map((c) =>
+        c.id === checkId
+          ? {
+              ...c,
+              response,
+              result: responseToResult(response),
+              measuredValue: response.toUpperCase(),
+              lastCheckedDate: today,
+              inspector: inspector || prev.defaultInspector,
+              notes: notes !== undefined ? notes : c.notes,
+            }
+          : c
+      ),
+    }));
+  };
+
+  const setEnvironmentalGroupResponse = (groupId: string, response: EnvironmentalResponse) => {
+    const today = getTodayIso();
+    setData((prev) => ({
+      ...prev,
+      environmentalChecks: prev.environmentalChecks.map((c) =>
+        c.groupId === groupId
+          ? {
+              ...c,
+              response,
+              result: responseToResult(response),
+              measuredValue: response.toUpperCase(),
+              lastCheckedDate: today,
+              inspector: prev.defaultInspector,
+            }
+          : c
+      ),
+    }));
+  };
+
+  const deleteEnvironmentalCheck = (checkId: string) => {
+    setData((prev) => ({
+      ...prev,
+      environmentalChecks: prev.environmentalChecks.filter((c) => c.id !== checkId),
+    }));
+  };
+
+  const updateEnvironmentalRoundMeta = (patch: Partial<EnvironmentalRoundMeta>) => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const current = hydrateEnvironmentalRoundMeta(prev.environmentalRoundMeta, today);
+      return {
+        ...prev,
+        environmentalRoundMeta: {
+          ...current,
+          ...patch,
+          groupComments: patch.groupComments
+            ? { ...current.groupComments, ...patch.groupComments }
+            : current.groupComments,
+        },
+      };
+    });
   };
 
   // --- Maintenance Follow-Up Tickets ---
@@ -1288,20 +1499,40 @@ export function useWardStore() {
     const today = getTodayIso();
     const hydratedForms = syncNearExpiryInPharmacyForms(rawForms, nextCarts);
     const nextInventory = Array.isArray(imported.inventory)
-      ? migrateLegacyIvMedsInventory(
-          migrateLegacyStoreInventory(
-            migrateLegacyTransferBagInventory(imported.inventory),
+      ? migrateLegacyEquipmentInventory(
+          migrateLegacyBloodTrolleyInventory(
+            migrateLegacyPrepRoomInventory(
+              migrateLegacyProcedureTrolleyInventory(
+                migrateLegacyIvMedsInventory(
+                  migrateLegacyStoreInventory(
+                    migrateLegacyTransferBagInventory(imported.inventory),
+                    today
+                  ),
+                  hydratedForms,
+                  today,
+                  imported.defaultInspector || initial.defaultInspector
+                ),
+                today
+              ),
+              today
+            ),
             today
           ),
-          hydratedForms,
-          today,
-          imported.defaultInspector || initial.defaultInspector
+          today
         )
       : initial.inventory;
     setData({
       ...initial,
       ...imported,
       inventory: nextInventory,
+      environmentalChecks: migrateLegacyEnvironmentalChecks(imported.environmentalChecks, today),
+      environmentalRoundMeta: hydrateEnvironmentalRoundMeta(
+        imported.environmentalRoundMeta,
+        today
+      ),
+      equipmentMaintenanceLogs: Array.isArray(imported.equipmentMaintenanceLogs)
+        ? imported.equipmentMaintenanceLogs
+        : createInitialEquipmentMaintenanceLogs(today),
       oxygenCylinders: migrateLegacyOxygenCylinders(imported.oxygenCylinders, today),
       cylinderSchedule: hydrateCylinderSchedule(imported.cylinderSchedule, today),
       crashCarts: nextCarts,
@@ -1337,8 +1568,15 @@ export function useWardStore() {
     updateInventoryItem,
     deleteInventoryItem,
     verifyInventoryItem,
+    addEquipmentMaintenanceLog,
+    updateEquipmentMaintenanceLog,
+    deleteEquipmentMaintenanceLog,
     updateEnvironmentalCheck,
     addEnvironmentalCheck,
+    setEnvironmentalResponse,
+    setEnvironmentalGroupResponse,
+    deleteEnvironmentalCheck,
+    updateEnvironmentalRoundMeta,
     addMaintenanceTicket,
     updateMaintenanceTicketStatus,
     deleteMaintenanceTicket,

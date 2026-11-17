@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Clock, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Clock, Link2, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type {
   MaintenanceTicket,
@@ -11,9 +11,13 @@ import { addDaysIso, formatShortDate, getTodayIso } from '../utils/dateUtils';
 interface MaintenanceFollowUpViewProps {
   tickets: MaintenanceTicket[];
   defaultInspector: string;
-  onAddTicket: (ticket: Omit<MaintenanceTicket, 'id'>) => void;
+  onAddTicket: (
+    ticket: Omit<MaintenanceTicket, 'id'>,
+    syncToEnvironmentalLog?: boolean
+  ) => void;
   onUpdateStatus: (ticketId: string, status: TicketStatus, notes?: string) => void;
   onDeleteTicket: (ticketId: string) => void;
+  onOpenEnvironmentalRound?: () => void;
 }
 
 export function MaintenanceFollowUpView({
@@ -22,23 +26,35 @@ export function MaintenanceFollowUpView({
   onAddTicket,
   onUpdateStatus,
   onDeleteTicket,
+  onOpenEnvironmentalRound,
 }: MaintenanceFollowUpViewProps) {
   const today = getTodayIso();
-  const [statusFilter, setStatusFilter] = useState<'active' | 'resolved' | 'all'>('active');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'gh0030' | 'resolved' | 'all'>(
+    'active'
+  );
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [newTitle, setNewTitle] = useState('');
-  const [newArea, setNewArea] = useState('Medical Equipment');
+  const [newArea, setNewArea] = useState('Environmental Round (GH0030)');
   const [newUnit, setNewUnit] = useState<WardUnit>('CCU');
   const [newDept, setNewDept] =
-    useState<MaintenanceTicket['department']>('Biomedical Engineering');
+    useState<MaintenanceTicket['department']>('Facilities & HVAC');
   const [newPriority, setNewPriority] = useState<TicketPriority>('Urgent');
   const [newTargetDate, setNewTargetDate] = useState(addDaysIso(today, 2));
   const [newNotes, setNewNotes] = useState('');
+  const [syncToEnvLog, setSyncToEnvLog] = useState(true);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((tk) => {
       if (statusFilter === 'active' && tk.status === 'Resolved') return false;
+      if (
+        statusFilter === 'gh0030' &&
+        !tk.linkedFollowUpId &&
+        !tk.sourceArea.toLowerCase().includes('gh0030') &&
+        !tk.sourceArea.toLowerCase().includes('environmental')
+      ) {
+        return false;
+      }
       if (statusFilter === 'resolved' && tk.status !== 'Resolved') return false;
       return true;
     });
@@ -48,25 +64,34 @@ export function MaintenanceFollowUpView({
     const open = tickets.filter((t) => t.status === 'Open').length;
     const inProgress = tickets.filter((t) => t.status === 'In Progress').length;
     const resolved = tickets.filter((t) => t.status === 'Resolved').length;
-    return { open, inProgress, resolved };
+    const gh0030 = tickets.filter(
+      (t) =>
+        Boolean(t.linkedFollowUpId) ||
+        t.sourceArea.toLowerCase().includes('gh0030') ||
+        t.sourceArea.toLowerCase().includes('environmental')
+    ).length;
+    return { open, inProgress, resolved, gh0030 };
   }, [tickets]);
 
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    onAddTicket({
-      title: newTitle.trim(),
-      sourceArea: newArea,
-      unit: newUnit,
-      department: newDept,
-      priority: newPriority,
-      status: 'Open',
-      reportedDate: today,
-      reportedBy: defaultInspector,
-      targetDate: newTargetDate || addDaysIso(today, 3),
-      resolvedDate: null,
-      notes: newNotes.trim(),
-    });
+    onAddTicket(
+      {
+        title: newTitle.trim(),
+        sourceArea: newArea,
+        unit: newUnit,
+        department: newDept,
+        priority: newPriority,
+        status: 'Open',
+        reportedDate: today,
+        reportedBy: defaultInspector,
+        targetDate: newTargetDate || addDaysIso(today, 3),
+        resolvedDate: null,
+        notes: newNotes.trim(),
+      },
+      syncToEnvLog
+    );
     setNewTitle('');
     setNewNotes('');
     setShowAddModal(false);
@@ -116,10 +141,11 @@ export function MaintenanceFollowUpView({
       {/* Table Container */}
       <section className="bg-white border border-slate-200 rounded-lg">
         <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto">
             {(
               [
                 { id: 'active', label: 'Active Follow-Ups' },
+                { id: 'gh0030', label: `GH0030 Round (${counts.gh0030})` },
                 { id: 'resolved', label: 'Resolved' },
                 { id: 'all', label: 'All Tickets' },
               ] as const
@@ -139,14 +165,26 @@ export function MaintenanceFollowUpView({
             ))}
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Log Maintenance Request
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {onOpenEnvironmentalRound && (
+              <button
+                type="button"
+                onClick={onOpenEnvironmentalRound}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Open GH0030 Follow-Up Log
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Log Maintenance Request
+            </button>
+          </div>
         </div>
 
         {filteredTickets.length === 0 ? (
@@ -177,7 +215,15 @@ export function MaintenanceFollowUpView({
                 {filteredTickets.map((tk) => (
                   <tr key={tk.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3 px-4 max-w-md">
-                      <div className="font-medium text-slate-900">{tk.title}</div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium text-slate-900">{tk.title}</span>
+                        {tk.linkedFollowUpId && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-teal-50 text-teal-800 border border-teal-200 rounded">
+                            <Link2 className="w-2.5 h-2.5" />
+                            GH0030 Synced
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-0.5 text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
                         <span>{tk.sourceArea}</span>
                         <span aria-hidden="true">·</span>
@@ -388,6 +434,16 @@ export function MaintenanceFollowUpView({
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                 />
               </div>
+
+              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={syncToEnvLog}
+                  onChange={(e) => setSyncToEnvLog(e.target.checked)}
+                  className="rounded border-slate-300 text-teal-700 focus:ring-teal-700"
+                />
+                Also add to Environmental Round (GH0030) Follow-Up Log
+              </label>
 
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
