@@ -41,6 +41,7 @@ export default function App() {
     addEquipmentMaintenanceLog,
     updateEquipmentMaintenanceLog,
     deleteEquipmentMaintenanceLog,
+    syncEquipmentToMaintenanceTickets,
     updateEnvironmentalCheck,
     addEnvironmentalCheck,
     setEnvironmentalResponse,
@@ -81,6 +82,9 @@ export default function App() {
 
   const today = getTodayIso();
   const [activeNav, setActiveNav] = useState<NavSectionId>('schedule');
+  const [equipmentTabOnOpen, setEquipmentTabOnOpen] = useState<'inventory' | 'maintenance'>(
+    'inventory'
+  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
 
@@ -160,6 +164,7 @@ export default function App() {
   }, [activeNav, activeCategory]);
 
   const handleSelectNav = (nav: NavSectionId) => {
+    setEquipmentTabOnOpen('inventory');
     setActiveNav(nav);
     setMobileMenuOpen(false);
   };
@@ -339,7 +344,7 @@ export default function App() {
 
             {activeCategory && activeCategory.id !== 'iv-meds' && (
               <InventoryModuleView
-                key={activeCategory.id}
+                key={`${activeCategory.id}-${equipmentTabOnOpen}`}
                 category={activeCategory}
                 items={data.inventory}
                 wardName={data.wardName}
@@ -356,6 +361,9 @@ export default function App() {
                 onAddEquipmentMaintenanceLog={addEquipmentMaintenanceLog}
                 onUpdateEquipmentMaintenanceLog={updateEquipmentMaintenanceLog}
                 onDeleteEquipmentMaintenanceLog={deleteEquipmentMaintenanceLog}
+                initialEquipmentTab={
+                  activeCategory.id === 'equipment' ? equipmentTabOnOpen : 'inventory'
+                }
               />
             )}
 
@@ -394,10 +402,18 @@ export default function App() {
             {activeNav === 'maintenance' && (
               <MaintenanceFollowUpView
                 tickets={data.maintenanceTickets}
+                wardName={data.wardName}
                 defaultInspector={data.defaultInspector}
+                equipmentItems={data.inventory.filter((it) => it.categoryId === 'equipment')}
                 onAddTicket={addMaintenanceTicket}
                 onUpdateStatus={updateMaintenanceTicketStatus}
                 onDeleteTicket={deleteMaintenanceTicket}
+                onSyncEquipmentLogs={syncEquipmentToMaintenanceTickets}
+                onOpenEquipmentRepairLog={() => {
+                  setEquipmentTabOnOpen('maintenance');
+                  setActiveNav('inv:equipment');
+                }}
+                onOpenEnvironmentalRound={() => setActiveNav('environmental')}
               />
             )}
           </main>

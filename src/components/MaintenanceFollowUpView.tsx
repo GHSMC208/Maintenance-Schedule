@@ -1,37 +1,68 @@
-import { AlertTriangle, ArrowUpRight, CheckCircle2, Clock, Link2, Plus, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock,
+  Eye,
+  FileEdit,
+  Link2,
+  Plus,
+  Printer,
+  RefreshCw,
+  Trash2,
+  Wrench,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { AddMaintenanceTicketSyncOptions } from '../hooks/useWardStore';
 import type {
+  InventoryItem,
   MaintenanceTicket,
   TicketPriority,
   TicketStatus,
   WardUnit,
 } from '../types/ward';
 import { addDaysIso, formatShortDate, getTodayIso } from '../utils/dateUtils';
+import {
+  MaintenanceFollowUpPrintView,
+  type MaintenancePrintStatusFilter,
+} from './MaintenanceFollowUpPrintView';
 
 interface MaintenanceFollowUpViewProps {
   tickets: MaintenanceTicket[];
+  wardName?: string;
   defaultInspector: string;
+  equipmentItems?: InventoryItem[];
   onAddTicket: (
     ticket: Omit<MaintenanceTicket, 'id'>,
-    syncToEnvironmentalLog?: boolean
+    syncOptions?: boolean | AddMaintenanceTicketSyncOptions
   ) => void;
   onUpdateStatus: (ticketId: string, status: TicketStatus, notes?: string) => void;
   onDeleteTicket: (ticketId: string) => void;
+  onSyncEquipmentLogs?: () => void;
+  onOpenEquipmentRepairLog?: () => void;
   onOpenEnvironmentalRound?: () => void;
 }
 
 export function MaintenanceFollowUpView({
   tickets,
+  wardName,
   defaultInspector,
+  equipmentItems = [],
   onAddTicket,
   onUpdateStatus,
   onDeleteTicket,
+  onSyncEquipmentLogs,
+  onOpenEquipmentRepairLog,
   onOpenEnvironmentalRound,
 }: MaintenanceFollowUpViewProps) {
   const today = getTodayIso();
-  const [statusFilter, setStatusFilter] = useState<'active' | 'gh0030' | 'resolved' | 'all'>(
-    'active'
-  );
+  const [statusFilter, setStatusFilter] = useState<MaintenancePrintStatusFilter>('active');
+  const [unitFilter, setUnitFilter] = useState<'All' | WardUnit>('All');
+  const [departmentFilter, setDepartmentFilter] = useState<
+    'All' | MaintenanceTicket['department']
+  >('All');
+  const [priorityFilter, setPriorityFilter] = useState<'All' | TicketPriority>('All');
+  const [viewMode, setViewMode] = useState<'list' | 'print-preview'>('list');
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [newTitle, setNewTitle] = useState('');
@@ -43,10 +74,20 @@ export function MaintenanceFollowUpView({
   const [newTargetDate, setNewTargetDate] = useState(addDaysIso(today, 2));
   const [newNotes, setNewNotes] = useState('');
   const [syncToEnvLog, setSyncToEnvLog] = useState(true);
+  const [syncToEquipmentLog, setSyncToEquipmentLog] = useState(false);
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
+  const [newWorkOrderNo, setNewWorkOrderNo] = useState('');
+  const [justSyncedEquipment, setJustSyncedEquipment] = useState(false);
+
+  const isEquipmentLinkedTicket = (tk: MaintenanceTicket) =>
+    Boolean(tk.linkedEquipmentLogId) ||
+    tk.sourceArea.toLowerCase().includes('equipment') ||
+    tk.department === 'Biomedical Engineering';
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((tk) => {
       if (statusFilter === 'active' && tk.status === 'Resolved') return false;
+      if (statusFilter === 'equipment' && !isEquipmentLinkedTicket(tk)) return false;
       if (
         statusFilter === 'gh0030' &&
         !tk.linkedFollowUpId &&
@@ -64,18 +105,23 @@ export function MaintenanceFollowUpView({
     const open = tickets.filter((t) => t.status === 'Open').length;
     const inProgress = tickets.filter((t) => t.status === 'In Progress').length;
     const resolved = tickets.filter((t) => t.status === 'Resolved').length;
+    const equipment = tickets.filter((t) => isEquipmentLinkedTicket(t)).length;
     const gh0030 = tickets.filter(
       (t) =>
         Boolean(t.linkedFollowUpId) ||
         t.sourceArea.toLowerCase().includes('gh0030') ||
         t.sourceArea.toLowerCase().includes('environmental')
     ).length;
-    return { open, inProgress, resolved, gh0030 };
+    return { open, inProgress, resolved, equipment, gh0030 };
   }, [tickets]);
 
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
+    const linkedDevice = selectedEquipmentId
+      ? equipmentItems.find((it) => it.id === selectedEquipmentId)
+      : undefined;
+
     onAddTicket(
       {
         title: newTitle.trim(),
@@ -90,17 +136,32 @@ export function MaintenanceFollowUpView({
         resolvedDate: null,
         notes: newNotes.trim(),
       },
-      syncToEnvLog
+      {
+        syncToEnvironmentalLog: syncToEnvLog,
+        syncToEquipmentLog,
+        equipmentItemId: linkedDevice?.id,
+        equipmentName: linkedDevice
+          ? linkedDevice.otherCode
+            ? `${linkedDevice.name} (#${linkedDevice.otherCode})`
+            : linkedDevice.name
+          : newTitle.trim(),
+        tableName: linkedDevice?.locationDetail || 'Table 9 - Others',
+        mohNumber: linkedDevice?.batchOrSerial || '—',
+        workOrderNo: newWorkOrderNo.trim(),
+      }
     );
     setNewTitle('');
     setNewNotes('');
+    setSelectedEquipmentId('');
+    setNewWorkOrderNo('');
+    setSyncToEquipmentLog(false);
     setShowAddModal(false);
   };
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5">
+      <div className="no-print bg-white border border-slate-200 rounded-lg p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
@@ -111,40 +172,84 @@ export function MaintenanceFollowUpView({
               facility follow-ups reported during weekly and monthly ward inspections.
             </p>
           </div>
-          <div className="flex items-center gap-6 text-right">
-            <div>
-              <div className="text-[11px] font-medium text-slate-500">Open</div>
-              <div
-                className={`text-xl font-semibold font-mono tabular-nums ${
-                  counts.open > 0 ? 'text-rose-700' : 'text-slate-900'
-                }`}
+          <div className="flex flex-wrap items-center gap-5">
+            <div className="flex items-center gap-5 text-right">
+              <div>
+                <div className="text-[11px] font-medium text-slate-500">Open</div>
+                <div
+                  className={`text-xl font-semibold font-mono tabular-nums ${
+                    counts.open > 0 ? 'text-rose-700' : 'text-slate-900'
+                  }`}
+                >
+                  {counts.open}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-medium text-slate-500">In Progress</div>
+                <div className="text-xl font-semibold font-mono tabular-nums text-amber-700">
+                  {counts.inProgress}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-medium text-slate-500">Resolved</div>
+                <div className="text-xl font-semibold font-mono tabular-nums text-emerald-700">
+                  {counts.resolved}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    viewMode === 'list'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileEdit className="w-3.5 h-3.5" />
+                  Edit List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('print-preview')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    viewMode === 'print-preview'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Print Preview
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
-                {counts.open}
-              </div>
-            </div>
-            <div>
-              <div className="text-[11px] font-medium text-slate-500">In Progress</div>
-              <div className="text-xl font-semibold font-mono tabular-nums text-amber-700">
-                {counts.inProgress}
-              </div>
-            </div>
-            <div>
-              <div className="text-[11px] font-medium text-slate-500">Resolved</div>
-              <div className="text-xl font-semibold font-mono tabular-nums text-emerald-700">
-                {counts.resolved}
-              </div>
+                <Printer className="w-3.5 h-3.5" />
+                Print Report (A4)
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       {/* Table Container */}
-      <section className="bg-white border border-slate-200 rounded-lg">
+      <section
+        className={`no-print bg-white border border-slate-200 rounded-lg ${
+          viewMode === 'print-preview' ? 'hidden' : ''
+        }`}
+      >
         <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto">
             {(
               [
                 { id: 'active', label: 'Active Follow-Ups' },
+                { id: 'equipment', label: `Equipment Log (${counts.equipment})` },
                 { id: 'gh0030', label: `GH0030 Round (${counts.gh0030})` },
                 { id: 'resolved', label: 'Resolved' },
                 { id: 'all', label: 'All Tickets' },
@@ -166,13 +271,39 @@ export function MaintenanceFollowUpView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {onSyncEquipmentLogs && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSyncEquipmentLogs();
+                  setJustSyncedEquipment(true);
+                  window.setTimeout(() => setJustSyncedEquipment(false), 2200);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                title="Sync entries from Medical Equipment Maintenance, Repair Log & Follow-Up"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                {justSyncedEquipment ? 'Equipment Log Synced' : 'Sync Equipment Log'}
+              </button>
+            )}
+            {onOpenEquipmentRepairLog && (
+              <button
+                type="button"
+                onClick={onOpenEquipmentRepairLog}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Wrench className="w-3.5 h-3.5 text-amber-700" />
+                Equipment Repair Log
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            )}
             {onOpenEnvironmentalRound && (
               <button
                 type="button"
                 onClick={onOpenEnvironmentalRound}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
-                Open GH0030 Follow-Up Log
+                GH0030 Follow-Up
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
             )}
@@ -217,6 +348,12 @@ export function MaintenanceFollowUpView({
                     <td className="py-3 px-4 max-w-md">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-medium text-slate-900">{tk.title}</span>
+                        {tk.linkedEquipmentLogId && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200 rounded">
+                            <Wrench className="w-2.5 h-2.5" />
+                            Equipment Synced
+                          </span>
+                        )}
                         {tk.linkedFollowUpId && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-teal-50 text-teal-800 border border-teal-200 rounded">
                             <Link2 className="w-2.5 h-2.5" />
@@ -333,6 +470,96 @@ export function MaintenanceFollowUpView({
         )}
       </section>
 
+      {/* Printable Report / Print Preview */}
+      <div
+        className={
+          viewMode === 'print-preview'
+            ? 'block overflow-x-auto pb-4'
+            : 'hidden print-only-block'
+        }
+      >
+        <div className="no-print mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-xs text-slate-600">
+          <div className="font-medium text-slate-700">
+            Maintenance Follow-Up &amp; Work Order Report Options
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-500">Scope:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as MaintenancePrintStatusFilter)
+                }
+                className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              >
+                <option value="active">
+                  Active Follow-Ups ({counts.open + counts.inProgress})
+                </option>
+                <option value="equipment">
+                  Medical Equipment Log ({counts.equipment})
+                </option>
+                <option value="gh0030">GH0030 Round ({counts.gh0030})</option>
+                <option value="resolved">Resolved ({counts.resolved})</option>
+                <option value="all">All Tickets ({tickets.length})</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-500">Unit:</span>
+              <select
+                value={unitFilter}
+                onChange={(e) => setUnitFilter(e.target.value as 'All' | WardUnit)}
+                className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              >
+                <option value="All">All Units</option>
+                <option value="CCU">CCU</option>
+                <option value="SD">SD</option>
+                <option value="General Ward">General Ward</option>
+                <option value="All Units">Ward-Wide (All Units)</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-500">Department:</span>
+              <select
+                value={departmentFilter}
+                onChange={(e) =>
+                  setDepartmentFilter(
+                    e.target.value as 'All' | MaintenanceTicket['department']
+                  )
+                }
+                className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              >
+                <option value="All">All Departments</option>
+                <option value="Biomedical Engineering">Biomedical Engineering</option>
+                <option value="Facilities & HVAC">Facilities &amp; HVAC</option>
+                <option value="Fire Safety">Fire Safety</option>
+                <option value="Pharmacy & Supply">Pharmacy &amp; Supply</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-500">Priority:</span>
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value as 'All' | TicketPriority)}
+                className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+              >
+                <option value="All">All Priorities</option>
+                <option value="Urgent">Urgent</option>
+                <option value="Routine">Routine</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <MaintenanceFollowUpPrintView
+          tickets={tickets}
+          wardName={wardName}
+          defaultInspector={defaultInspector}
+          statusFilter={statusFilter}
+          unitFilter={unitFilter}
+          departmentFilter={departmentFilter}
+          priorityFilter={priorityFilter}
+        />
+      </div>
+
       {/* Add Ticket Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
@@ -362,9 +589,16 @@ export function MaintenanceFollowUpView({
                   </label>
                   <select
                     value={newDept}
-                    onChange={(e) =>
-                      setNewDept(e.target.value as MaintenanceTicket['department'])
-                    }
+                    onChange={(e) => {
+                      const dept = e.target.value as MaintenanceTicket['department'];
+                      setNewDept(dept);
+                      if (dept === 'Biomedical Engineering') {
+                        setSyncToEquipmentLog(true);
+                        if (newArea.includes('Environmental')) {
+                          setNewArea('Medical Equipment');
+                        }
+                      }
+                    }}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                   >
                     <option value="Biomedical Engineering">Biomedical Engineering</option>
@@ -435,15 +669,76 @@ export function MaintenanceFollowUpView({
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={syncToEnvLog}
-                  onChange={(e) => setSyncToEnvLog(e.target.checked)}
-                  className="rounded border-slate-300 text-teal-700 focus:ring-teal-700"
-                />
-                Also add to Environmental Round (GH0030) Follow-Up Log
-              </label>
+              <div className="space-y-2 pt-1">
+                <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={syncToEquipmentLog}
+                    onChange={(e) => setSyncToEquipmentLog(e.target.checked)}
+                    className="rounded border-slate-300 text-amber-700 focus:ring-amber-700"
+                  />
+                  Also sync to Medical Equipment (Maintenance, Repair Log &amp; Follow-Up)
+                </label>
+
+                {syncToEquipmentLog && (
+                  <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-md space-y-2.5">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                        Link Equipment Device (Optional — auto-fills MOH # &amp; unit)
+                      </label>
+                      <select
+                        value={selectedEquipmentId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setSelectedEquipmentId(id);
+                          const found = equipmentItems.find((it) => it.id === id);
+                          if (found) {
+                            setNewUnit(found.unit);
+                            setNewDept('Biomedical Engineering');
+                            setNewArea(`Medical Equipment (${found.locationDetail})`);
+                            if (!newTitle.trim()) {
+                              setNewTitle(
+                                `${found.otherCode ? `#${found.otherCode} ` : ''}${found.name} fault`
+                              );
+                            }
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs border border-amber-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-amber-700"
+                      >
+                        <option value="">-- Optional: Select device from Tables 1–9 --</option>
+                        {equipmentItems.map((it) => (
+                          <option key={it.id} value={it.id}>
+                            {it.locationDetail} — {it.otherCode ? `#${it.otherCode} ` : ''}
+                            {it.name} (MOH: {it.batchOrSerial}) [{it.unit}]
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                        Work Order # (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={newWorkOrderNo}
+                        onChange={(e) => setNewWorkOrderNo(e.target.value)}
+                        placeholder="e.g., BM-208-052"
+                        className="w-full px-2.5 py-1.5 text-xs font-mono border border-amber-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-amber-700"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={syncToEnvLog}
+                    onChange={(e) => setSyncToEnvLog(e.target.checked)}
+                    className="rounded border-slate-300 text-teal-700 focus:ring-teal-700"
+                  />
+                  Also add to Environmental Round (GH0030) Follow-Up Log
+                </label>
+              </div>
 
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button

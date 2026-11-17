@@ -26,6 +26,7 @@ interface EquipmentPrintViewProps {
   includeMaintenanceLog?: boolean;
   printScope?: EquipmentPrintScope;
   maintenancePrintFilter?: EquipmentMaintenancePrintFilter;
+  maintenanceUnitFilter?: 'All' | 'CCU' | 'SD' | 'General Ward';
 }
 
 interface TableSlice {
@@ -77,6 +78,7 @@ export function EquipmentPrintView({
   includeMaintenanceLog = true,
   printScope = 'all',
   maintenancePrintFilter = 'all',
+  maintenanceUnitFilter = 'All',
 }: EquipmentPrintViewProps) {
   const today = getTodayIso();
   const [y, m, d] = today.split('-');
@@ -205,17 +207,28 @@ export function EquipmentPrintView({
   }
 
   const filteredMaintenanceLogs = maintenanceLogs.filter((entry) => {
-    if (maintenancePrintFilter === 'active') return entry.status !== 'Repaired / Returned';
-    if (maintenancePrintFilter === 'repaired') return entry.status === 'Repaired / Returned';
+    if (maintenancePrintFilter === 'active' && entry.status === 'Repaired / Returned') {
+      return false;
+    }
+    if (maintenancePrintFilter === 'repaired' && entry.status !== 'Repaired / Returned') {
+      return false;
+    }
+    if (maintenanceUnitFilter !== 'All' && entry.unit !== maintenanceUnitFilter) {
+      return false;
+    }
     return true;
   });
 
-  const filterBadgeLabel =
+  const statusFilterLabel =
     maintenancePrintFilter === 'active'
       ? 'Active / Open Follow-Up Only'
       : maintenancePrintFilter === 'repaired'
         ? 'Repaired / Returned Only'
         : 'All Repair & Follow-Up Entries';
+  const filterBadgeLabel =
+    maintenanceUnitFilter === 'All'
+      ? statusFilterLabel
+      : `${statusFilterLabel} (${maintenanceUnitFilter})`;
 
   const maintenanceActiveCount = filteredMaintenanceLogs.filter(
     (l) => l.status !== 'Repaired / Returned'
@@ -229,7 +242,7 @@ export function EquipmentPrintView({
     (includeMaintenanceLog && selectedTable === 'All' && filteredMaintenanceLogs.length > 0);
 
   if (shouldRenderMaintenance) {
-    const LOGS_PER_PAGE = 14;
+    const LOGS_PER_PAGE = 12;
     if (filteredMaintenanceLogs.length === 0) {
       pages.push({
         slices: [],
@@ -386,6 +399,49 @@ export function EquipmentPrintView({
                       compact={pg.slices.length >= 3}
                     />
                   ))}
+
+                  {isMaintenanceOnlyReport && pg.isFirstPage && (
+                    <table className="w-full border-collapse border border-black text-[8.5px]">
+                      <tbody>
+                        <tr className="bg-[#f8fafc] text-center">
+                          <td className="border-r border-black px-2 py-1 w-[25%]">
+                            <div className="text-[7.5px] uppercase text-slate-600 font-bold">
+                              Total Entries
+                            </div>
+                            <div className="text-[11px] font-bold font-mono tabular-nums">
+                              {filteredMaintenanceLogs.length}
+                            </div>
+                          </td>
+                          <td className="border-r border-black px-2 py-1 w-[25%] bg-[#fef2f2]">
+                            <div className="text-[7.5px] uppercase text-[#991b1b] font-bold">
+                              Active / Pending Follow-Up
+                            </div>
+                            <div className="text-[11px] font-bold font-mono tabular-nums text-[#7f1d1d]">
+                              {maintenanceActiveCount}
+                            </div>
+                          </td>
+                          <td className="border-r border-black px-2 py-1 w-[25%] bg-[#ecfdf5]">
+                            <div className="text-[7.5px] uppercase text-[#065f46] font-bold">
+                              Repaired / Returned
+                            </div>
+                            <div className="text-[11px] font-bold font-mono tabular-nums text-[#065f46]">
+                              {maintenanceRepairedCount}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 w-[25%]">
+                            <div className="text-[7.5px] uppercase text-slate-600 font-bold">
+                              Unit Scope
+                            </div>
+                            <div className="text-[10px] font-bold">
+                              {maintenanceUnitFilter === 'All'
+                                ? 'All Units (CCU & SD)'
+                                : maintenanceUnitFilter}
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
 
                   {pg.isMaintenanceOnlyPage && (
                     <EquipmentMaintenancePdfTable logs={pg.maintenanceSlice || []} />

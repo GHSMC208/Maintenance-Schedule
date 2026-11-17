@@ -77,7 +77,23 @@ import type {
 } from '../types/ward';
 import { addDaysIso, addMonthsIso, getTodayIso } from '../utils/dateUtils';
 import { syncPharmacyFormItemsIntoIvMeds } from '../utils/ivMedsSync';
+import {
+  isoToSlashDate,
+  mapTicketDeptToServiceDept,
+  mapTicketStatusToEquipmentLogStatus,
+  syncMaintenanceTicketsFromEquipmentLogs,
+} from '../utils/maintenanceSync';
 import { syncNearExpiryInPharmacyForms } from '../utils/nearExpirySync';
+
+export interface AddMaintenanceTicketSyncOptions {
+  syncToEnvironmentalLog?: boolean;
+  syncToEquipmentLog?: boolean;
+  equipmentItemId?: string;
+  equipmentName?: string;
+  tableName?: string;
+  mohNumber?: string;
+  workOrderNo?: string;
+}
 
 const STORAGE_KEY = 'wardcare_schedule_store_v1';
 
@@ -515,6 +531,17 @@ function loadInitialStore(): WardStoreData {
           ),
           today
         );
+        const rawEqLogs = Array.isArray(parsed.equipmentMaintenanceLogs)
+          ? parsed.equipmentMaintenanceLogs
+          : createInitialEquipmentMaintenanceLogs(today);
+        const syncedEquip = syncMaintenanceTicketsFromEquipmentLogs(
+          rawEqLogs,
+          Array.isArray(parsed.maintenanceTickets)
+            ? parsed.maintenanceTickets
+            : initial.maintenanceTickets,
+          parsed.defaultInspector || initial.defaultInspector,
+          today
+        );
         return {
           ...initial,
           ...parsed,
@@ -524,9 +551,8 @@ function loadInitialStore(): WardStoreData {
             parsed.environmentalRoundMeta,
             today
           ),
-          equipmentMaintenanceLogs: Array.isArray(parsed.equipmentMaintenanceLogs)
-            ? parsed.equipmentMaintenanceLogs
-            : createInitialEquipmentMaintenanceLogs(today),
+          equipmentMaintenanceLogs: syncedEquip.equipmentLogs,
+          maintenanceTickets: syncedEquip.maintenanceTickets,
           oxygenCylinders: migrateLegacyOxygenCylinders(parsed.oxygenCylinders, today),
           cylinderSchedule: hydrateCylinderSchedule(parsed.cylinderSchedule, today),
           crashCarts: hydratedCrashCarts,
@@ -543,7 +569,19 @@ function loadInitialStore(): WardStoreData {
   } catch {
     // Fallback to initial seed data if localStorage is unavailable or malformed
   }
-  return createInitialWardData();
+  const initialFresh = createInitialWardData();
+  const todayFresh = getTodayIso();
+  const syncedFresh = syncMaintenanceTicketsFromEquipmentLogs(
+    initialFresh.equipmentMaintenanceLogs || [],
+    initialFresh.maintenanceTickets,
+    initialFresh.defaultInspector,
+    todayFresh
+  );
+  return {
+    ...initialFresh,
+    equipmentMaintenanceLogs: syncedFresh.equipmentLogs,
+    maintenanceTickets: syncedFresh.maintenanceTickets,
+  };
 }
 
 export function useWardStore() {
@@ -697,22 +735,33 @@ export function useWardStore() {
     entry: Omit<EquipmentMaintenanceLogEntry, 'id'>,
     syncEquipmentStatus?: EquipmentStatus
   ) => {
+    const today = getTodayIso();
     const newEntry: EquipmentMaintenanceLogEntry = {
       ...entry,
       id: `eqm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
     };
-    setData((prev) => ({
-      ...prev,
-      equipmentMaintenanceLogs: [newEntry, ...(prev.equipmentMaintenanceLogs || [])],
-      inventory:
-        syncEquipmentStatus && entry.equipmentItemId
-          ? prev.inventory.map((it) =>
-              it.id === entry.equipmentItemId
-                ? { ...it, equipmentStatus: syncEquipmentStatus }
-                : it
-            )
-          : prev.inventory,
-    }));
+    setData((prev) => {
+      const nextLogs = [newEntry, ...(prev.equipmentMaintenanceLogs || [])];
+      const synced = syncMaintenanceTicketsFromEquipmentLogs(
+        nextLogs,
+        prev.maintenanceTickets,
+        prev.defaultInspector,
+        today
+      );
+      return {
+        ...prev,
+        equipmentMaintenanceLogs: synced.equipmentLogs,
+        maintenanceTickets: synced.maintenanceTickets,
+        inventory:
+          syncEquipmentStatus && entry.equipmentItemId
+            ? prev.inventory.map((it) =>
+                it.id === entry.equipmentItemId
+                  ? { ...it, equipmentStatus: syncEquipmentStatus }
+                  : it
+              )
+            : prev.inventory,
+      };
+    });
   };
 
   const updateEquipmentMaintenanceLog = (
@@ -720,14 +769,23 @@ export function useWardStore() {
     patch: Partial<EquipmentMaintenanceLogEntry>,
     syncEquipmentStatus?: EquipmentStatus
   ) => {
+    const today = getTodayIso();
     setData((prev) => {
       const existing = (prev.equipmentMaintenanceLogs || []).find((e) => e.id === entryId);
       const targetItemId = patch.equipmentItemId ?? existing?.equipmentItemId;
+      const updatedLogs = (prev.equipmentMaintenanceLogs || []).map((e) =>
+        e.id === entryId ? { ...e, ...patch } : e
+      );
+      const synced = syncMaintenanceTicketsFromEquipmentLogs(
+        updatedLogs,
+        prev.maintenanceTickets,
+        prev.defaultInspector,
+        today
+      );
       return {
         ...prev,
-        equipmentMaintenanceLogs: (prev.equipmentMaintenanceLogs || []).map((e) =>
-          e.id === entryId ? { ...e, ...patch } : e
-        ),
+        equipmentMaintenanceLogs: synced.equipmentLogs,
+        maintenanceTickets: synced.maintenanceTickets,
         inventory:
           syncEquipmentStatus && targetItemId
             ? prev.inventory.map((it) =>
@@ -739,12 +797,40 @@ export function useWardStore() {
   };
 
   const deleteEquipmentMaintenanceLog = (entryId: string) => {
-    setData((prev) => ({
-      ...prev,
-      equipmentMaintenanceLogs: (prev.equipmentMaintenanceLogs || []).filter(
+    const today = getTodayIso();
+    setData((prev) => {
+      const remainingLogs = (prev.equipmentMaintenanceLogs || []).filter(
         (e) => e.id !== entryId
-      ),
-    }));
+      );
+      const synced = syncMaintenanceTicketsFromEquipmentLogs(
+        remainingLogs,
+        prev.maintenanceTickets,
+        prev.defaultInspector,
+        today
+      );
+      return {
+        ...prev,
+        equipmentMaintenanceLogs: synced.equipmentLogs,
+        maintenanceTickets: synced.maintenanceTickets,
+      };
+    });
+  };
+
+  const syncEquipmentToMaintenanceTickets = () => {
+    const today = getTodayIso();
+    setData((prev) => {
+      const synced = syncMaintenanceTicketsFromEquipmentLogs(
+        prev.equipmentMaintenanceLogs || [],
+        prev.maintenanceTickets,
+        prev.defaultInspector,
+        today
+      );
+      return {
+        ...prev,
+        equipmentMaintenanceLogs: synced.equipmentLogs,
+        maintenanceTickets: synced.maintenanceTickets,
+      };
+    });
   };
 
   // --- Environmental Round Checklist ---
@@ -887,15 +973,105 @@ export function useWardStore() {
   };
 
   // --- Maintenance Follow-Up Tickets ---
-  const addMaintenanceTicket = (ticket: Omit<MaintenanceTicket, 'id'>) => {
-    const newTicket: MaintenanceTicket = {
-      ...ticket,
-      id: `mnt-${Date.now().toString(36)}`,
-    };
-    setData((prev) => ({
-      ...prev,
-      maintenanceTickets: [newTicket, ...prev.maintenanceTickets],
-    }));
+  const addMaintenanceTicket = (
+    ticket: Omit<MaintenanceTicket, 'id'>,
+    syncOptions?: boolean | AddMaintenanceTicketSyncOptions
+  ) => {
+    const today = getTodayIso();
+    const opts: AddMaintenanceTicketSyncOptions =
+      typeof syncOptions === 'boolean'
+        ? { syncToEnvironmentalLog: syncOptions }
+        : syncOptions || {};
+
+    const ticketId = `mnt-${Date.now().toString(36)}`;
+    let linkedFollowUpId: string | undefined;
+    let linkedEquipmentLogId: string | undefined;
+
+    setData((prev) => {
+      let nextEqLogs = prev.equipmentMaintenanceLogs || [];
+      let nextInventory = prev.inventory;
+      let nextEnvMeta = prev.environmentalRoundMeta;
+
+      if (opts.syncToEquipmentLog) {
+        const newLogId = `eqm-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 5)}`;
+        linkedEquipmentLogId = newLogId;
+        const unitNormalized: EquipmentMaintenanceLogEntry['unit'] =
+          ticket.unit === 'CCU' || ticket.unit === 'SD' || ticket.unit === 'General Ward'
+            ? ticket.unit
+            : 'CCU';
+        const newEqLog: EquipmentMaintenanceLogEntry = {
+          id: newLogId,
+          equipmentItemId: opts.equipmentItemId || undefined,
+          equipmentName: opts.equipmentName?.trim() || ticket.title,
+          tableName: opts.tableName?.trim() || 'Table 9 - Others',
+          mohNumber: opts.mohNumber?.trim() || '—',
+          unit: unitNormalized,
+          issueDescription: ticket.title,
+          reportedDate: ticket.reportedDate || today,
+          reportedBy: ticket.reportedBy || prev.defaultInspector,
+          workOrderNo: opts.workOrderNo?.trim() || '',
+          serviceDepartment: mapTicketDeptToServiceDept(ticket.department),
+          actionTaken: ticket.notes?.trim() || '',
+          status: mapTicketStatusToEquipmentLogStatus(ticket.status),
+          resolvedDate: ticket.resolvedDate,
+          verifiedBy: ticket.status === 'Resolved' ? prev.defaultInspector : '',
+          linkedTicketId: ticketId,
+        };
+        nextEqLogs = [newEqLog, ...nextEqLogs];
+
+        if (opts.equipmentItemId) {
+          nextInventory = prev.inventory.map((it) =>
+            it.id === opts.equipmentItemId
+              ? {
+                  ...it,
+                  equipmentStatus:
+                    ticket.status === 'Resolved' ? 'Operational' : 'Under Maintenance',
+                }
+              : it
+          );
+        }
+      }
+
+      if (opts.syncToEnvironmentalLog) {
+        const envMeta = hydrateEnvironmentalRoundMeta(prev.environmentalRoundMeta, today);
+        const newRowId = `ghfu-${Date.now().toString(36)}`;
+        linkedFollowUpId = newRowId;
+        nextEnvMeta = {
+          ...envMeta,
+          followUpRows: [
+            ...envMeta.followUpRows,
+            {
+              id: newRowId,
+              issue: ticket.title,
+              date: isoToSlashDate(ticket.reportedDate || today),
+              responsibleDept: ticket.department,
+              workOrderSubmitted: ticket.status !== 'Open',
+              dateCompleted:
+                ticket.status === 'Resolved' ? isoToSlashDate(today) : 'Pending',
+              highlightRed: ticket.priority === 'Urgent' && ticket.status !== 'Resolved',
+              linkedTicketId: ticketId,
+            },
+          ],
+        };
+      }
+
+      const newTicket: MaintenanceTicket = {
+        ...ticket,
+        id: ticketId,
+        linkedFollowUpId,
+        linkedEquipmentLogId,
+      };
+
+      return {
+        ...prev,
+        maintenanceTickets: [newTicket, ...prev.maintenanceTickets],
+        equipmentMaintenanceLogs: nextEqLogs,
+        inventory: nextInventory,
+        environmentalRoundMeta: nextEnvMeta,
+      };
+    });
   };
 
   const updateMaintenanceTicketStatus = (
@@ -904,9 +1080,9 @@ export function useWardStore() {
     notes?: string
   ) => {
     const today = getTodayIso();
-    setData((prev) => ({
-      ...prev,
-      maintenanceTickets: prev.maintenanceTickets.map((tk) =>
+    setData((prev) => {
+      const targetTicket = prev.maintenanceTickets.find((tk) => tk.id === ticketId);
+      const nextTickets = prev.maintenanceTickets.map((tk) =>
         tk.id === ticketId
           ? {
               ...tk,
@@ -915,15 +1091,100 @@ export function useWardStore() {
               notes: notes !== undefined ? notes : tk.notes,
             }
           : tk
-      ),
-    }));
+      );
+
+      let nextEqLogs = prev.equipmentMaintenanceLogs || [];
+      let nextInventory = prev.inventory;
+
+      const linkedLogId = targetTicket?.linkedEquipmentLogId;
+      if (linkedLogId) {
+        const existingLog = nextEqLogs.find((l) => l.id === linkedLogId);
+        if (existingLog) {
+          const nextLogStatus = mapTicketStatusToEquipmentLogStatus(
+            status,
+            existingLog.status
+          );
+          nextEqLogs = nextEqLogs.map((l) =>
+            l.id === linkedLogId
+              ? {
+                  ...l,
+                  status: nextLogStatus,
+                  resolvedDate: status === 'Resolved' ? today : null,
+                  verifiedBy:
+                    status === 'Resolved'
+                      ? l.verifiedBy || prev.defaultInspector
+                      : l.verifiedBy,
+                  actionTaken: notes !== undefined ? notes : l.actionTaken,
+                }
+              : l
+          );
+          if (existingLog.equipmentItemId) {
+            nextInventory = prev.inventory.map((it) =>
+              it.id === existingLog.equipmentItemId
+                ? {
+                    ...it,
+                    equipmentStatus:
+                      status === 'Resolved' ? 'Operational' : 'Under Maintenance',
+                  }
+                : it
+            );
+          }
+        }
+      }
+
+      let nextEnvMeta = prev.environmentalRoundMeta;
+      if (targetTicket?.linkedFollowUpId && prev.environmentalRoundMeta) {
+        nextEnvMeta = {
+          ...prev.environmentalRoundMeta,
+          followUpRows: prev.environmentalRoundMeta.followUpRows.map((r) =>
+            r.id === targetTicket.linkedFollowUpId
+              ? {
+                  ...r,
+                  workOrderSubmitted: status !== 'Open',
+                  dateCompleted:
+                    status === 'Resolved' ? isoToSlashDate(today) : 'Pending',
+                  highlightRed: status !== 'Resolved' && r.highlightRed,
+                }
+              : r
+          ),
+        };
+      }
+
+      return {
+        ...prev,
+        maintenanceTickets: nextTickets,
+        equipmentMaintenanceLogs: nextEqLogs,
+        inventory: nextInventory,
+        environmentalRoundMeta: nextEnvMeta,
+      };
+    });
   };
 
   const deleteMaintenanceTicket = (ticketId: string) => {
-    setData((prev) => ({
-      ...prev,
-      maintenanceTickets: prev.maintenanceTickets.filter((tk) => tk.id !== ticketId),
-    }));
+    setData((prev) => {
+      const targetTicket = prev.maintenanceTickets.find((tk) => tk.id === ticketId);
+      const nextEqLogs = targetTicket?.linkedEquipmentLogId
+        ? (prev.equipmentMaintenanceLogs || []).filter(
+            (l) => l.id !== targetTicket.linkedEquipmentLogId
+          )
+        : prev.equipmentMaintenanceLogs;
+      const nextEnvMeta =
+        targetTicket?.linkedFollowUpId && prev.environmentalRoundMeta
+          ? {
+              ...prev.environmentalRoundMeta,
+              followUpRows: prev.environmentalRoundMeta.followUpRows.filter(
+                (r) => r.id !== targetTicket.linkedFollowUpId
+              ),
+            }
+          : prev.environmentalRoundMeta;
+
+      return {
+        ...prev,
+        maintenanceTickets: prev.maintenanceTickets.filter((tk) => tk.id !== ticketId),
+        equipmentMaintenanceLogs: nextEqLogs,
+        environmentalRoundMeta: nextEnvMeta,
+      };
+    });
   };
 
   // --- Oxygen Cylinder Weekly Checking Tool ---
@@ -1521,6 +1782,17 @@ export function useWardStore() {
           today
         )
       : initial.inventory;
+    const rawImportedEqLogs = Array.isArray(imported.equipmentMaintenanceLogs)
+      ? imported.equipmentMaintenanceLogs
+      : createInitialEquipmentMaintenanceLogs(today);
+    const syncedImportedEquip = syncMaintenanceTicketsFromEquipmentLogs(
+      rawImportedEqLogs,
+      Array.isArray(imported.maintenanceTickets)
+        ? imported.maintenanceTickets
+        : initial.maintenanceTickets,
+      imported.defaultInspector || initial.defaultInspector,
+      today
+    );
     setData({
       ...initial,
       ...imported,
@@ -1530,9 +1802,8 @@ export function useWardStore() {
         imported.environmentalRoundMeta,
         today
       ),
-      equipmentMaintenanceLogs: Array.isArray(imported.equipmentMaintenanceLogs)
-        ? imported.equipmentMaintenanceLogs
-        : createInitialEquipmentMaintenanceLogs(today),
+      equipmentMaintenanceLogs: syncedImportedEquip.equipmentLogs,
+      maintenanceTickets: syncedImportedEquip.maintenanceTickets,
       oxygenCylinders: migrateLegacyOxygenCylinders(imported.oxygenCylinders, today),
       cylinderSchedule: hydrateCylinderSchedule(imported.cylinderSchedule, today),
       crashCarts: nextCarts,
@@ -1571,6 +1842,7 @@ export function useWardStore() {
     addEquipmentMaintenanceLog,
     updateEquipmentMaintenanceLog,
     deleteEquipmentMaintenanceLog,
+    syncEquipmentToMaintenanceTickets,
     updateEnvironmentalCheck,
     addEnvironmentalCheck,
     setEnvironmentalResponse,

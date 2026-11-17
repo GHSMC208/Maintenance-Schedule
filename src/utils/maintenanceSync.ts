@@ -1,5 +1,7 @@
 import type {
   EnvironmentalFollowUpRow,
+  EquipmentMaintenanceLogEntry,
+  EquipmentMaintenanceLogStatus,
   MaintenanceTicket,
   TicketStatus,
   WardUnit,
@@ -165,5 +167,143 @@ export function syncMaintenanceTicketsFromFollowUpRows(
   return {
     followUpRows: nextRows,
     maintenanceTickets: [...remainingTickets, ...generatedOrUpdatedTickets],
+  };
+}
+
+export function mapEquipmentLogStatusToTicketStatus(
+  status: EquipmentMaintenanceLogStatus
+): TicketStatus {
+  if (status === 'Repaired / Returned') return 'Resolved';
+  if (status === 'Open') return 'Open';
+  return 'In Progress';
+}
+
+export function mapTicketStatusToEquipmentLogStatus(
+  status: TicketStatus,
+  previousLogStatus?: EquipmentMaintenanceLogStatus
+): EquipmentMaintenanceLogStatus {
+  if (status === 'Resolved') return 'Repaired / Returned';
+  if (status === 'Open') return 'Open';
+  if (
+    previousLogStatus === 'Reported to Biomed' ||
+    previousLogStatus === 'Sent to Workshop' ||
+    previousLogStatus === 'Awaiting Parts'
+  ) {
+    return previousLogStatus;
+  }
+  return 'Reported to Biomed';
+}
+
+export function mapServiceDeptToTicketDept(
+  serviceDept: string
+): MaintenanceTicket['department'] {
+  const lower = (serviceDept || '').toLowerCase();
+  if (lower.includes('facilities') || lower.includes('electrical') || lower.includes('hvac')) {
+    return 'Facilities & HVAC';
+  }
+  if (lower.includes('fire')) return 'Fire Safety';
+  if (lower.includes('pharmacy') || lower.includes('supply')) return 'Pharmacy & Supply';
+  return 'Biomedical Engineering';
+}
+
+export function mapTicketDeptToServiceDept(dept: MaintenanceTicket['department']): string {
+  if (dept === 'Facilities & HVAC') return 'Facilities & Electrical';
+  if (dept === 'Biomedical Engineering') return 'Biomedical Engineering';
+  return dept;
+}
+
+/**
+ * Ensures every Medical Equipment Maintenance & Repair Log entry has a synchronized
+ * MaintenanceTicket in Maintenance Follow-Up and removes orphaned linked equipment tickets.
+ */
+export function syncMaintenanceTicketsFromEquipmentLogs(
+  equipmentLogs: EquipmentMaintenanceLogEntry[],
+  existingTickets: MaintenanceTicket[],
+  defaultInspector: string,
+  today: string
+): {
+  equipmentLogs: EquipmentMaintenanceLogEntry[];
+  maintenanceTickets: MaintenanceTicket[];
+} {
+  const ticketById = new Map(existingTickets.map((t) => [t.id, t]));
+  const ticketByEquipmentLogId = new Map(
+    existingTickets
+      .filter((t) => t.linkedEquipmentLogId)
+      .map((t) => [t.linkedEquipmentLogId as string, t])
+  );
+
+  const validLogIds = new Set(equipmentLogs.map((l) => l.id));
+  const nextLogs: EquipmentMaintenanceLogEntry[] = [];
+  const syncedTickets: MaintenanceTicket[] = [];
+  const consumedTicketIds = new Set<string>();
+
+  for (const log of equipmentLogs) {
+    const existingTicket =
+      (log.linkedTicketId ? ticketById.get(log.linkedTicketId) : undefined) ||
+      ticketByEquipmentLogId.get(log.id);
+
+    const ticketStatus = mapEquipmentLogStatusToTicketStatus(log.status);
+    const reportedDate = log.reportedDate || today;
+    const resolvedDate =
+      ticketStatus === 'Resolved' ? log.resolvedDate || today : null;
+    const mohBadge =
+      log.mohNumber && log.mohNumber !== '—' ? ` (MOH: ${log.mohNumber})` : '';
+    const title = `${log.equipmentName}${mohBadge} — ${log.issueDescription}`;
+    const notesParts = [
+      log.workOrderNo?.trim() ? `WO: ${log.workOrderNo.trim()}` : '',
+      log.serviceDepartment?.trim() ? `Service: ${log.serviceDepartment.trim()}` : '',
+      log.actionTaken?.trim() ? log.actionTaken.trim() : '',
+    ].filter(Boolean);
+    const notes = notesParts.join(' · ');
+
+    if (existingTicket) {
+      consumedTicketIds.add(existingTicket.id);
+      const updatedTicket: MaintenanceTicket = {
+        ...existingTicket,
+        title,
+        sourceArea: `Medical Equipment (${log.tableName || 'Equipment Log'})`,
+        unit: log.unit,
+        department: mapServiceDeptToTicketDept(log.serviceDepartment),
+        status: ticketStatus,
+        reportedDate,
+        reportedBy: log.reportedBy || defaultInspector,
+        resolvedDate,
+        notes: notes || existingTicket.notes,
+        linkedEquipmentLogId: log.id,
+      };
+      syncedTickets.push(updatedTicket);
+      nextLogs.push({ ...log, linkedTicketId: existingTicket.id });
+    } else {
+      const newTicketId = `mnt-eq-${log.id}`;
+      consumedTicketIds.add(newTicketId);
+      const newTicket: MaintenanceTicket = {
+        id: newTicketId,
+        title,
+        sourceArea: `Medical Equipment (${log.tableName || 'Equipment Log'})`,
+        unit: log.unit,
+        department: mapServiceDeptToTicketDept(log.serviceDepartment),
+        priority: ticketStatus === 'Resolved' ? 'Routine' : 'Urgent',
+        status: ticketStatus,
+        reportedDate,
+        reportedBy: log.reportedBy || defaultInspector,
+        targetDate: addDaysIso(reportedDate, 3),
+        resolvedDate,
+        notes: notes || 'Synced from Medical Equipment Maintenance, Repair Log & Follow-Up.',
+        linkedEquipmentLogId: log.id,
+      };
+      syncedTickets.push(newTicket);
+      nextLogs.push({ ...log, linkedTicketId: newTicketId });
+    }
+  }
+
+  const remainingTickets = existingTickets.filter((tk) => {
+    if (consumedTicketIds.has(tk.id)) return false;
+    if (tk.linkedEquipmentLogId && !validLogIds.has(tk.linkedEquipmentLogId)) return false;
+    return true;
+  });
+
+  return {
+    equipmentLogs: nextLogs,
+    maintenanceTickets: [...syncedTickets, ...remainingTickets],
   };
 }

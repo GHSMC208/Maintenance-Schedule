@@ -90,6 +90,7 @@ export interface EquipmentMaintenanceLogEntry {
   status: EquipmentMaintenanceLogStatus;
   resolvedDate: string | null;
   verifiedBy: string;
+  linkedTicketId?: string;
 }
 
 export type EnvironmentalSection =
@@ -159,6 +160,7 @@ export interface MaintenanceTicket {
   resolvedDate: string | null;
   notes: string;
   linkedFollowUpId?: string;
+  linkedEquipmentLogId?: string;
 }
 
 export interface OxygenCylinder {

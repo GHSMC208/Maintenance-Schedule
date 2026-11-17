@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Clock,
   Edit3,
+  Eye,
   Plus,
   Printer,
   Search,
@@ -35,7 +36,11 @@ interface EquipmentMaintenanceLogSectionProps {
     syncEquipmentStatus?: EquipmentStatus
   ) => void;
   onDeleteLog: (entryId: string) => void;
-  onPrintReport?: (filter: 'all' | 'active' | 'repaired') => void;
+  onPrintReport?: (
+    filter: 'all' | 'active' | 'repaired',
+    unitFilter: 'All' | 'CCU' | 'SD' | 'General Ward',
+    autoPrint?: boolean
+  ) => void;
 }
 
 const LOG_STATUSES: EquipmentMaintenanceLogStatus[] = [
@@ -314,14 +319,24 @@ export function EquipmentMaintenanceLogSection({
             </button>
           )}
           {onPrintReport && (
-            <button
-              type="button"
-              onClick={() => onPrintReport(statusFilter)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-md transition-colors cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5 text-teal-700" />
-              Print Repair Report
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => onPrintReport(statusFilter, unitFilter, false)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-md transition-colors cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5 text-slate-600" />
+                Print Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => onPrintReport(statusFilter, unitFilter, true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-900 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md transition-colors cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 text-teal-700" />
+                Print Report (A4)
+              </button>
+            </>
           )}
           <button
             type="button"

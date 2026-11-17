@@ -84,6 +84,7 @@ interface InventoryModuleViewProps {
     syncEquipmentStatus?: EquipmentStatus
   ) => void;
   onDeleteEquipmentMaintenanceLog?: (entryId: string) => void;
+  initialEquipmentTab?: 'inventory' | 'maintenance';
 }
 
 export function InventoryModuleView({
@@ -103,6 +104,7 @@ export function InventoryModuleView({
   onAddEquipmentMaintenanceLog,
   onUpdateEquipmentMaintenanceLog,
   onDeleteEquipmentMaintenanceLog,
+  initialEquipmentTab = 'inventory',
 }: InventoryModuleViewProps) {
   const today = getTodayIso();
   const isTransferBag = category.id === 'transfer-bag';
@@ -129,11 +131,18 @@ export function InventoryModuleView({
     useState<StorePrintLayoutMode>('two-per-sheet');
   const [equipmentPrintLayout, setEquipmentPrintLayout] =
     useState<EquipmentPrintLayoutMode>('grouped');
-  const [equipmentPrintScope, setEquipmentPrintScope] =
-    useState<EquipmentPrintScope>('all');
+  const [equipmentPrintScope, setEquipmentPrintScope] = useState<EquipmentPrintScope>(
+    initialEquipmentTab === 'maintenance' ? 'maintenance-only' : 'all'
+  );
   const [includeEquipmentMaintenanceLog, setIncludeEquipmentMaintenanceLog] = useState(true);
   const [equipmentMaintenancePrintFilter, setEquipmentMaintenancePrintFilter] =
     useState<EquipmentMaintenancePrintFilter>('all');
+  const [equipmentMaintenanceUnitFilter, setEquipmentMaintenanceUnitFilter] = useState<
+    'All' | 'CCU' | 'SD' | 'General Ward'
+  >('All');
+  const [equipmentSectionTab, setEquipmentSectionTab] = useState<'inventory' | 'maintenance'>(
+    initialEquipmentTab
+  );
   const [preselectedItemForRepair, setPreselectedItemForRepair] =
     useState<InventoryItem | null>(null);
   const [collapsedStoreSections, setCollapsedStoreSections] = useState<Record<string, boolean>>({});
@@ -823,82 +832,62 @@ export function InventoryModuleView({
                   )}
 
                   {isEquipmentModule ? (
-                    <>
+                    equipmentPrintScope === 'maintenance-only' ||
+                    equipmentSectionTab === 'maintenance' ? (
                       <div
                         className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
-                        title="Choose which Medical Equipment report to print"
+                        title="Filter Maintenance, Repair Log & Follow-Up printout entries"
+                      >
+                        {(
+                          [
+                            { id: 'all', label: 'All Logs' },
+                            { id: 'active', label: 'Active Only' },
+                            { id: 'repaired', label: 'Repaired Only' },
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setEquipmentMaintenancePrintFilter(opt.id)}
+                            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                              equipmentMaintenancePrintFilter === opt.id
+                                ? 'bg-white text-slate-900 shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
+                        title="Choose Medical Equipment printout pagination"
                       >
                         <button
                           type="button"
-                          onClick={() => {
-                            setEquipmentPrintScope('all');
-                            setIncludeEquipmentMaintenanceLog(false);
-                          }}
+                          onClick={() => setEquipmentPrintLayout('grouped')}
                           className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                            equipmentPrintScope === 'all' && !includeEquipmentMaintenanceLog
+                            equipmentPrintLayout === 'grouped'
                               ? 'bg-white text-slate-900 shadow-sm'
                               : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          Inventory Only
+                          Grouped (Official)
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setEquipmentPrintScope('all');
-                            setIncludeEquipmentMaintenanceLog(true);
-                          }}
+                          onClick={() => setEquipmentPrintLayout('one-per-sheet')}
                           className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                            equipmentPrintScope === 'all' && includeEquipmentMaintenanceLog
+                            equipmentPrintLayout === 'one-per-sheet'
                               ? 'bg-white text-slate-900 shadow-sm'
                               : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          Inventory + Repair Log
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEquipmentPrintScope('maintenance-only')}
-                          className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                            equipmentPrintScope === 'maintenance-only'
-                              ? 'bg-white text-amber-900 shadow-sm'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          Repair Log Report ({equipmentMaintenanceLogs.length})
+                          1 Table / Page
                         </button>
                       </div>
-
-                      {equipmentPrintScope !== 'maintenance-only' && (
-                        <div
-                          className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
-                          title="Choose Medical Equipment printout pagination"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setEquipmentPrintLayout('grouped')}
-                            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                              equipmentPrintLayout === 'grouped'
-                                ? 'bg-white text-slate-900 shadow-sm'
-                                : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                          >
-                            Grouped (Official)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEquipmentPrintLayout('one-per-sheet')}
-                            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                              equipmentPrintLayout === 'one-per-sheet'
-                                ? 'bg-white text-slate-900 shadow-sm'
-                                : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                          >
-                            1 Table / Page
-                          </button>
-                        </div>
-                      )}
-                    </>
+                    )
                   ) : (
                     <div
                       className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
@@ -983,7 +972,8 @@ export function InventoryModuleView({
                   >
                     <Printer className="w-3.5 h-3.5" />
                     {isEquipmentModule
-                      ? equipmentPrintScope === 'maintenance-only'
+                      ? equipmentPrintScope === 'maintenance-only' ||
+                        equipmentSectionTab === 'maintenance'
                         ? 'Print Repair Report (A4)'
                         : 'Print Inventory (A4)'
                       : 'Print Checklist (A4)'}
@@ -1774,8 +1764,71 @@ export function InventoryModuleView({
         <div
           className={`no-print space-y-4 ${viewMode === 'print-preview' ? 'hidden' : ''}`}
         >
-          {/* Categorized Medical Equipment Tables Filter Bar */}
-          <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+          {/* Medical Equipment Part Switcher: Inventory Tables vs Maintenance, Repair Log & Follow-Up */}
+          <div className="bg-white border border-slate-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setEquipmentSectionTab('inventory');
+                  setEquipmentPrintScope('all');
+                }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                  equipmentSectionTab === 'inventory'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Inventory Tables ({equipmentUnitTotal})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEquipmentSectionTab('maintenance');
+                  setEquipmentPrintScope('maintenance-only');
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                  equipmentSectionTab === 'maintenance'
+                    ? 'bg-white text-amber-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                Maintenance, Repair Log &amp; Follow-Up ({equipmentMaintenanceLogs.length})
+              </button>
+            </div>
+          </div>
+
+          {/* Part 1: Medical Equipment Maintenance, Repair Log & Follow-Up */}
+          {equipmentSectionTab === 'maintenance' &&
+            onAddEquipmentMaintenanceLog &&
+            onUpdateEquipmentMaintenanceLog &&
+            onDeleteEquipmentMaintenanceLog && (
+              <EquipmentMaintenanceLogSection
+                logs={equipmentMaintenanceLogs}
+                equipmentItems={categoryItems}
+                defaultInspector={defaultInspector}
+                preselectedItemForNewLog={preselectedItemForRepair}
+                onClearPreselectedItem={() => setPreselectedItemForRepair(null)}
+                onAddLog={onAddEquipmentMaintenanceLog}
+                onUpdateLog={onUpdateEquipmentMaintenanceLog}
+                onDeleteLog={onDeleteEquipmentMaintenanceLog}
+                onPrintReport={(filter, unit, autoPrint) => {
+                  setEquipmentPrintScope('maintenance-only');
+                  setEquipmentMaintenancePrintFilter(filter);
+                  setEquipmentMaintenanceUnitFilter(unit);
+                  setViewMode('print-preview');
+                  if (autoPrint) {
+                    window.setTimeout(() => window.print(), 80);
+                  }
+                }}
+              />
+            )}
+
+          {equipmentSectionTab === 'inventory' && (
+            <>
+              {/* Categorized Medical Equipment Tables Filter Bar */}
+              <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
             <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
               <button
                 type="button"
@@ -2146,7 +2199,11 @@ export function InventoryModuleView({
                                     {!isStoreRow && !isTotalRow && onAddEquipmentMaintenanceLog && (
                                       <button
                                         type="button"
-                                        onClick={() => setPreselectedItemForRepair(item)}
+                                        onClick={() => {
+                                          setPreselectedItemForRepair(item);
+                                          setEquipmentSectionTab('maintenance');
+                                          setEquipmentPrintScope('maintenance-only');
+                                        }}
                                         title="Log Maintenance / Repair Follow-Up"
                                         className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded transition-colors cursor-pointer"
                                       >
@@ -2190,27 +2247,8 @@ export function InventoryModuleView({
               );
             })
           )}
-
-          {/* Medical Equipment Maintenance, Repair Log & Follow-Up */}
-          {onAddEquipmentMaintenanceLog &&
-            onUpdateEquipmentMaintenanceLog &&
-            onDeleteEquipmentMaintenanceLog && (
-              <EquipmentMaintenanceLogSection
-                logs={equipmentMaintenanceLogs}
-                equipmentItems={categoryItems}
-                defaultInspector={defaultInspector}
-                preselectedItemForNewLog={preselectedItemForRepair}
-                onClearPreselectedItem={() => setPreselectedItemForRepair(null)}
-                onAddLog={onAddEquipmentMaintenanceLog}
-                onUpdateLog={onUpdateEquipmentMaintenanceLog}
-                onDeleteLog={onDeleteEquipmentMaintenanceLog}
-                onPrintReport={(filter) => {
-                  setEquipmentPrintScope('maintenance-only');
-                  setEquipmentMaintenancePrintFilter(filter);
-                  setViewMode('print-preview');
-                }}
-              />
-            )}
+            </>
+          )}
         </div>
       ) : (
         <div
@@ -2751,17 +2789,31 @@ export function InventoryModuleView({
               Showing printable{' '}
               <span className="font-semibold text-slate-800">
                 {equipmentPrintScope === 'maintenance-only'
-                  ? 'Medical Equipment Maintenance, Repair Log & Follow-Up Report'
+                  ? 'Medical Equipment Maintenance, Repair Log & Follow-Up'
                   : 'Medical Equipment Monthly Inventory'}
               </span>{' '}
               —{' '}
               <span className="font-mono font-semibold text-slate-900">
                 {equipmentPrintScope === 'maintenance-only'
                   ? equipmentMaintenanceLogs.filter((entry) => {
-                      if (equipmentMaintenancePrintFilter === 'active')
-                        return entry.status !== 'Repaired / Returned';
-                      if (equipmentMaintenancePrintFilter === 'repaired')
-                        return entry.status === 'Repaired / Returned';
+                      if (
+                        equipmentMaintenancePrintFilter === 'active' &&
+                        entry.status === 'Repaired / Returned'
+                      ) {
+                        return false;
+                      }
+                      if (
+                        equipmentMaintenancePrintFilter === 'repaired' &&
+                        entry.status !== 'Repaired / Returned'
+                      ) {
+                        return false;
+                      }
+                      if (
+                        equipmentMaintenanceUnitFilter !== 'All' &&
+                        entry.unit !== equipmentMaintenanceUnitFilter
+                      ) {
+                        return false;
+                      }
                       return true;
                     }).length
                   : equipmentTableFilter === 'All'
@@ -2777,72 +2829,81 @@ export function InventoryModuleView({
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium text-slate-500">Print Report:</span>
+                <span className="text-[11px] font-medium text-slate-500">Print Scope:</span>
                 <select
-                  value={
-                    equipmentPrintScope === 'maintenance-only'
-                      ? 'maintenance-only'
-                      : includeEquipmentMaintenanceLog
-                        ? 'all-with-log'
-                        : 'inventory-only'
-                  }
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === 'maintenance-only') {
-                      setEquipmentPrintScope('maintenance-only');
-                    } else if (val === 'all-with-log') {
-                      setEquipmentPrintScope('all');
-                      setIncludeEquipmentMaintenanceLog(true);
-                    } else {
-                      setEquipmentPrintScope('all');
-                      setIncludeEquipmentMaintenanceLog(false);
-                    }
-                  }}
+                  value={equipmentPrintScope}
+                  onChange={(e) => setEquipmentPrintScope(e.target.value as EquipmentPrintScope)}
                   className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
                 >
-                  <option value="all-with-log">Full Inventory + Repair Log</option>
-                  <option value="inventory-only">Inventory Tables Only</option>
+                  <option value="all">Full Inventory (+ Repair Log)</option>
                   <option value="maintenance-only">
-                    Maintenance, Repair Log &amp; Follow-Up Report ({equipmentMaintenanceLogs.length})
+                    Maintenance &amp; Repair Log Only ({equipmentMaintenanceLogs.length})
                   </option>
                 </select>
               </div>
-              {(equipmentPrintScope === 'maintenance-only' ||
-                (equipmentPrintScope === 'all' &&
-                  includeEquipmentMaintenanceLog &&
-                  equipmentTableFilter === 'All')) && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-medium text-slate-500">Repair Log Filter:</span>
-                  <select
-                    value={equipmentMaintenancePrintFilter}
-                    onChange={(e) =>
-                      setEquipmentMaintenancePrintFilter(
-                        e.target.value as EquipmentMaintenancePrintFilter
-                      )
-                    }
-                    className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
-                  >
-                    <option value="all">
-                      All Entries ({equipmentMaintenanceLogs.length})
-                    </option>
-                    <option value="active">
-                      Active Follow-Up Only (
-                      {
-                        equipmentMaintenanceLogs.filter((l) => l.status !== 'Repaired / Returned')
-                          .length
+              {equipmentPrintScope === 'maintenance-only' && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-medium text-slate-500">Status Filter:</span>
+                    <select
+                      value={equipmentMaintenancePrintFilter}
+                      onChange={(e) =>
+                        setEquipmentMaintenancePrintFilter(
+                          e.target.value as EquipmentMaintenancePrintFilter
+                        )
                       }
-                      )
-                    </option>
-                    <option value="repaired">
-                      Repaired / Closed Only (
-                      {
-                        equipmentMaintenanceLogs.filter((l) => l.status === 'Repaired / Returned')
-                          .length
+                      className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    >
+                      <option value="all">All Entries ({equipmentMaintenanceLogs.length})</option>
+                      <option value="active">
+                        Active / Open Only (
+                        {
+                          equipmentMaintenanceLogs.filter(
+                            (l) => l.status !== 'Repaired / Returned'
+                          ).length
+                        }
+                        )
+                      </option>
+                      <option value="repaired">
+                        Repaired / Closed Only (
+                        {
+                          equipmentMaintenanceLogs.filter(
+                            (l) => l.status === 'Repaired / Returned'
+                          ).length
+                        }
+                        )
+                      </option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-medium text-slate-500">Unit:</span>
+                    <select
+                      value={equipmentMaintenanceUnitFilter}
+                      onChange={(e) =>
+                        setEquipmentMaintenanceUnitFilter(
+                          e.target.value as 'All' | 'CCU' | 'SD' | 'General Ward'
+                        )
                       }
-                      )
-                    </option>
-                  </select>
-                </div>
+                      className="px-2.5 py-1 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    >
+                      <option value="All">All Units</option>
+                      <option value="CCU">CCU</option>
+                      <option value="SD">SD</option>
+                      <option value="General Ward">General Ward</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              {equipmentPrintScope === 'all' && equipmentTableFilter === 'All' && (
+                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeEquipmentMaintenanceLog}
+                    onChange={(e) => setIncludeEquipmentMaintenanceLog(e.target.checked)}
+                    className="rounded border-slate-300 text-teal-700 accent-teal-700 cursor-pointer"
+                  />
+                  Include Repair Log Sheet
+                </label>
               )}
               {equipmentPrintScope === 'all' && (
                 <div className="flex items-center gap-2">
@@ -2874,6 +2935,7 @@ export function InventoryModuleView({
             includeMaintenanceLog={includeEquipmentMaintenanceLog}
             printScope={equipmentPrintScope}
             maintenancePrintFilter={equipmentMaintenancePrintFilter}
+            maintenanceUnitFilter={equipmentMaintenanceUnitFilter}
           />
         </div>
       )}
